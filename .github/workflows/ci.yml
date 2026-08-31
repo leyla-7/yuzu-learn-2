@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -24,17 +24,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install dependencies for bounded lockfile generation
-        run: npm install --no-audit --no-fund
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
 
       - name: Verify foundation
         run: npm run check
-
-      - name: Commit generated lockfile
-        if: github.event_name == 'push'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git diff --cached --quiet || git commit -m "fix: commit WORK-YUZU-054 dependency lockfile"
-          git push origin HEAD:work-yuzu-054-technical-foundation
