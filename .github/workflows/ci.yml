@@ -24,13 +24,14 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install dependencies and emit lockfile for bounded reproducibility correction
-        run: |
-          npm install --no-audit --no-fund
-          echo "WORK_YUZU_054_LOCKFILE_BASE64_BEGIN"
-          base64 -w 0 package-lock.json
-          echo
-          echo "WORK_YUZU_054_LOCKFILE_BASE64_END"
+      - name: Install dependencies for bounded lockfile generation
+        run: npm install --no-audit --no-fund
+
+      - name: Upload generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: work-yuzu-054-package-lock
+          path: package-lock.json
 
       - name: Verify foundation
         run: npm run check
