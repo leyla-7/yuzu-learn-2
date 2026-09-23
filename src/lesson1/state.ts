@@ -157,6 +157,7 @@ export function createInitialLesson1State(): Lesson1RuntimeState {
     reconstruction: emptyAttemptEvidence(),
     reducedReading: {
       ...emptyAttemptEvidence(),
+      helpEvents: [],
       firstResponseOutcome: 'not-attempted',
       independentRetryOutcome: 'not-attempted',
       postRecoveryReadingOutcome: 'not-attempted',
@@ -251,6 +252,7 @@ export function recordReducedReadingFirstResponse(
     reducedReading: {
       ...state.reducedReading,
       ...evidence,
+      helpEvents: state.reducedReading.helpEvents,
       firstResponseOutcome:
         state.reducedReading.firstResponseOutcome === 'not-attempted'
           ? outcome
@@ -269,6 +271,7 @@ export function recordReducedReadingIndependentRetry(
     reducedReading: {
       ...state.reducedReading,
       ...evidence,
+      helpEvents: state.reducedReading.helpEvents,
       independentRetryOutcome: outcome,
     },
   }
@@ -320,6 +323,7 @@ export function recordPostRecoveryReading(
     reducedReading: {
       ...state.reducedReading,
       ...evidence,
+      helpEvents: state.reducedReading.helpEvents,
       postRecoveryReadingOutcome: outcome,
     },
   }
