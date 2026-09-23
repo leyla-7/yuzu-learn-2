@@ -2,109 +2,170 @@ import { describe, expect, it } from 'vitest'
 import {
   completeCurrentEpisode,
   createInitialLesson1State,
-  markReducedReadingHelpUsed,
-  markReducedReadingRecoveryUsed,
-  recordDifficultPartAttempt,
+  recordClusterAttempt,
   recordMappingAttempt,
+  recordPostRecoveryReading,
   recordReconstructionAttempt,
-  recordReducedReadingAttempt,
+  recordReducedReadingFirstResponse,
+  recordReducedReadingHelp,
+  recordReducedReadingIndependentRetry,
+  recordReducedReadingRecovery,
   recordSemanticReconnection,
+  recordVowelContrastAttempt,
 } from './state'
 
-describe('WORK-YUZU-063 Lesson 1 runtime evidence scaffolding', () => {
-  it('starts at the first Product episode with no inferred evidence', () => {
+describe('WORK-YUZU-063 post-UX runtime evidence contracts', () => {
+  it('starts with no inferred evidence', () => {
     const state = createInitialLesson1State()
-
     expect(state.currentEpisode).toBe('episode-1-greeting-happens')
-    expect(state.completedEpisodes).toEqual([])
-    expect(state.reducedReading.firstAttemptOutcome).toBe('not-attempted')
+    expect(state.reducedReading.firstResponseOutcome).toBe('not-attempted')
     expect(state.lessonCompleted).toBe(false)
   })
 
-  it('advances only through the approved episode sequence', () => {
+  it('preserves reciprocal retrieval evidence per mapping', () => {
     let state = createInitialLesson1State()
+    state = recordMappingAttempt(state, 'y', 'sound-to-grapheme', 'failure')
+    state = recordMappingAttempt(state, 'y', 'grapheme-to-sound', 'success')
 
-    state = completeCurrentEpisode(state)
-    expect(state.currentEpisode).toBe('episode-2-discover-function')
-
-    state = completeCurrentEpisode(state)
-    expect(state.currentEpisode).toBe('episode-3-open-word')
-
-    state = completeCurrentEpisode(state)
-    expect(state.currentEpisode).toBe('episode-4-difficult-parts')
+    expect(
+      state.mappingEvidence.y['sound-to-grapheme'].firstAttemptOutcome,
+    ).toBe('failure')
+    expect(
+      state.mappingEvidence.y['grapheme-to-sound'].firstAttemptOutcome,
+    ).toBe('success')
   })
 
-  it('keeps mapping evidence addressable per required mapping', () => {
-    const state = recordMappingAttempt(
-      createInitialLesson1State(),
-      'y',
+  it('preserves both vowel-contrast directions and their support independently', () => {
+    let state = createInitialLesson1State()
+    state = recordVowelContrastAttempt(
+      state,
+      'sound-to-grapheme',
+      'success',
+      { helpClassification: 'linguistic-support' },
+    )
+    state = recordVowelContrastAttempt(
+      state,
+      'grapheme-to-sound',
       'failure',
     )
 
-    expect(state.mappingEvidence.y.firstAttemptOutcome).toBe('failure')
-    expect(state.mappingEvidence.i.firstAttemptOutcome).toBe('not-attempted')
+    expect(
+      state.difficultParts.vowelContrast['sound-to-grapheme'].supportUsed,
+    ).toBe(true)
+    expect(
+      state.difficultParts.vowelContrast['grapheme-to-sound'].supportUsed,
+    ).toBe(false)
   })
 
-  it('keeps vowel contrast and cluster evidence independent', () => {
+  it('does not classify task-orientation help as linguistic support', () => {
     let state = createInitialLesson1State()
-
-    state = recordDifficultPartAttempt(
+    state = recordMappingAttempt(
       state,
-      'vowelContrast',
+      'r',
+      'sound-to-grapheme',
       'success',
-    )
-    state = recordDifficultPartAttempt(state, 'cluster', 'failure')
-
-    expect(state.difficultParts.vowelContrast.firstAttemptOutcome).toBe('success')
-    expect(state.difficultParts.cluster.firstAttemptOutcome).toBe('failure')
-  })
-
-  it('tracks supported reconstruction without converting it into unsupported success', () => {
-    const state = recordReconstructionAttempt(
-      createInitialLesson1State(),
-      'success',
-      { supportUsed: true },
+      { helpClassification: 'task-orientation' },
     )
 
-    expect(state.reconstruction.firstAttemptOutcome).toBe('success')
-    expect(state.reconstruction.supportUsed).toBe(true)
-    expect(state.reconstruction.supportAssistedSuccess).toBe(true)
+    const evidence = state.mappingEvidence.r['sound-to-grapheme']
+    expect(evidence.helpEvents).toEqual([
+      { classification: 'task-orientation' },
+    ])
+    expect(evidence.supportUsed).toBe(false)
+    expect(evidence.supportAssistedSuccess).toBe(false)
   })
 
-  it('preserves the first reduced-reading result after help and recovery', () => {
+  it('preserves recovery route identity', () => {
     let state = createInitialLesson1State()
+    state = recordClusterAttempt(state, 'failure', {
+      recoveryRoute: 'cluster',
+    })
+    state = recordReconstructionAttempt(state, 'failure', {
+      recoveryRoute: 'guided-reconstruction-general',
+    })
+    state = recordMappingAttempt(
+      state,
+      'v',
+      'grapheme-to-sound',
+      'failure',
+      { recoveryRoute: 'individual-mapping' },
+    )
 
-    state = recordReducedReadingAttempt(state, 'failure')
-    state = markReducedReadingHelpUsed(state)
-    state = markReducedReadingRecoveryUsed(state)
-    state = recordReducedReadingAttempt(state, 'success')
+    expect(state.difficultParts.cluster.recoveryRoutes).toEqual(['cluster'])
+    expect(state.reconstruction.recoveryRoutes).toEqual([
+      'guided-reconstruction-general',
+    ])
+    expect(
+      state.mappingEvidence.v['grapheme-to-sound'].recoveryRoutes,
+    ).toEqual(['individual-mapping'])
+  })
 
-    expect(state.reducedReading.attemptCount).toBe(2)
+  it('keeps first response, independent retry, help timing and post-recovery reading separate', () => {
+    let state = createInitialLesson1State()
+    state = recordReducedReadingFirstResponse(state, 'failure')
+    state = recordReducedReadingIndependentRetry(state, 'failure')
+    state = recordReducedReadingHelp(
+      state,
+      'answer-bearing-reteaching',
+      'after-failed-response',
+    )
+    state = recordReducedReadingRecovery(state, 'vowel-contrast')
+    state = recordPostRecoveryReading(state, 'success')
+
+    expect(state.reducedReading.firstResponseOutcome).toBe('failure')
+    expect(state.reducedReading.independentRetryOutcome).toBe('failure')
+    expect(state.reducedReading.postRecoveryReadingOutcome).toBe('success')
     expect(state.reducedReading.firstAttemptOutcome).toBe('failure')
-    expect(state.reducedReading.latestOutcome).toBe('success')
-    expect(state.reducedReading.helpUsed).toBe(true)
-    expect(state.reducedReading.recoveryUsed).toBe(true)
+    expect(state.reducedReading.helpEvents).toEqual([
+      {
+        classification: 'answer-bearing-reteaching',
+        timing: 'after-failed-response',
+      },
+    ])
+    expect(state.reducedReading.recoveryRoutes).toEqual(['vowel-contrast'])
     expect(state.reducedReading.supportAssistedSuccess).toBe(true)
   })
 
-  it('records semantic reconnection separately from the reading attempt', () => {
+  it('preserves help before the first response without rewriting its later result', () => {
     let state = createInitialLesson1State()
+    state = recordReducedReadingHelp(
+      state,
+      'linguistic-support',
+      'before-first-response',
+    )
+    state = recordReducedReadingFirstResponse(state, 'success')
 
-    state = recordReducedReadingAttempt(state, 'success')
-    state = recordSemanticReconnection(state, 'failure')
-
-    expect(state.reducedReading.firstAttemptOutcome).toBe('success')
-    expect(state.reducedReading.semanticReconnectionOutcome).toBe('failure')
+    expect(state.reducedReading.firstResponseOutcome).toBe('success')
+    expect(state.reducedReading.helpEvents[0]?.timing).toBe(
+      'before-first-response',
+    )
+    expect(state.reducedReading.supportUsed).toBe(true)
   })
 
-  it('marks Lesson completion separately from any mastery claim', () => {
+  it('keeps semantic reconnection outcome/support distinct from reading evidence', () => {
     let state = createInitialLesson1State()
+    state = recordReducedReadingFirstResponse(state, 'success')
+    state = recordSemanticReconnection(state, 'failure', {
+      contextualSupportUsed: true,
+      recoveryUsed: true,
+    })
 
+    expect(state.reducedReading.firstResponseOutcome).toBe('success')
+    expect(state.reducedReading.semanticReconnection).toEqual({
+      outcome: 'failure',
+      contextualSupportUsed: true,
+      recoveryUsed: true,
+    })
+  })
+
+  it('marks completion separately from stronger reading/mastery evidence', () => {
+    let state = createInitialLesson1State()
     for (let index = 0; index < 7; index += 1) {
       state = completeCurrentEpisode(state)
     }
 
     expect(state.lessonCompleted).toBe(true)
     expect(state.carryForwardReady).toBe(true)
+    expect(state.reducedReading.firstResponseOutcome).toBe('not-attempted')
   })
 })

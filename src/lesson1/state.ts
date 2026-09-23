@@ -6,27 +6,63 @@ import {
 } from './contracts'
 
 export type AttemptOutcome = 'not-attempted' | 'success' | 'failure'
+export type RetrievalDirection = 'sound-to-grapheme' | 'grapheme-to-sound'
+export type HelpClassification =
+  | 'task-orientation'
+  | 'linguistic-support'
+  | 'answer-bearing-reteaching'
+export type ReducedReadingHelpTiming =
+  | 'before-first-response'
+  | 'after-failed-response'
+export type RecoveryRoute =
+  | 'vowel-contrast'
+  | 'cluster'
+  | 'individual-mapping'
+  | 'guided-reconstruction-general'
+
+export interface HelpEvent {
+  classification: HelpClassification
+}
 
 export interface AttemptEvidence {
   attemptCount: number
   firstAttemptOutcome: AttemptOutcome
   latestOutcome: AttemptOutcome
-  helpUsed: boolean
+  helpEvents: readonly HelpEvent[]
   supportUsed: boolean
-  recoveryUsed: boolean
+  recoveryRoutes: readonly RecoveryRoute[]
   supportAssistedSuccess: boolean
 }
 
+export type ReciprocalRetrievalEvidence = Record<
+  RetrievalDirection,
+  AttemptEvidence
+>
+
+export interface ReducedReadingHelpEvent extends HelpEvent {
+  timing: ReducedReadingHelpTiming
+}
+
+export interface SemanticReconnectionEvidence {
+  outcome: AttemptOutcome
+  contextualSupportUsed: boolean
+  recoveryUsed: boolean
+}
+
 export interface ReducedReadingEvidence extends AttemptEvidence {
-  semanticReconnectionOutcome: AttemptOutcome
+  firstResponseOutcome: AttemptOutcome
+  independentRetryOutcome: AttemptOutcome
+  postRecoveryReadingOutcome: AttemptOutcome
+  helpEvents: readonly ReducedReadingHelpEvent[]
+  semanticReconnection: SemanticReconnectionEvidence
 }
 
 export interface Lesson1RuntimeState {
   currentEpisode: Lesson1EpisodeId
   completedEpisodes: readonly Lesson1EpisodeId[]
-  mappingEvidence: Record<Lesson1MappingId, AttemptEvidence>
+  mappingEvidence: Record<Lesson1MappingId, ReciprocalRetrievalEvidence>
   difficultParts: {
-    vowelContrast: AttemptEvidence
+    vowelContrast: ReciprocalRetrievalEvidence
     cluster: AttemptEvidence
   }
   reconstruction: AttemptEvidence
@@ -36,9 +72,9 @@ export interface Lesson1RuntimeState {
 }
 
 export interface AttemptFlags {
-  helpUsed?: boolean
+  helpClassification?: HelpClassification
   supportUsed?: boolean
-  recoveryUsed?: boolean
+  recoveryRoute?: RecoveryRoute
 }
 
 function emptyAttemptEvidence(): AttemptEvidence {
@@ -46,11 +82,27 @@ function emptyAttemptEvidence(): AttemptEvidence {
     attemptCount: 0,
     firstAttemptOutcome: 'not-attempted',
     latestOutcome: 'not-attempted',
-    helpUsed: false,
+    helpEvents: [],
     supportUsed: false,
-    recoveryUsed: false,
+    recoveryRoutes: [],
     supportAssistedSuccess: false,
   }
+}
+
+function emptyReciprocalEvidence(): ReciprocalRetrievalEvidence {
+  return {
+    'sound-to-grapheme': emptyAttemptEvidence(),
+    'grapheme-to-sound': emptyAttemptEvidence(),
+  }
+}
+
+function isEvidenceAlteringHelp(
+  classification: HelpClassification | undefined,
+): boolean {
+  return (
+    classification === 'linguistic-support' ||
+    classification === 'answer-bearing-reteaching'
+  )
 }
 
 function recordAttempt(
@@ -58,28 +110,39 @@ function recordAttempt(
   outcome: Exclude<AttemptOutcome, 'not-attempted'>,
   flags: AttemptFlags = {},
 ): AttemptEvidence {
-  const helpUsed = evidence.helpUsed || flags.helpUsed === true
-  const supportUsed = evidence.supportUsed || flags.supportUsed === true
-  const recoveryUsed = evidence.recoveryUsed || flags.recoveryUsed === true
+  const helpEvents = flags.helpClassification
+    ? [...evidence.helpEvents, { classification: flags.helpClassification }]
+    : evidence.helpEvents
+  const supportUsed =
+    evidence.supportUsed ||
+    flags.supportUsed === true ||
+    isEvidenceAlteringHelp(flags.helpClassification)
+  const recoveryRoutes = flags.recoveryRoute
+    ? [...evidence.recoveryRoutes, flags.recoveryRoute]
+    : evidence.recoveryRoutes
 
   return {
     attemptCount: evidence.attemptCount + 1,
     firstAttemptOutcome:
       evidence.attemptCount === 0 ? outcome : evidence.firstAttemptOutcome,
     latestOutcome: outcome,
-    helpUsed,
+    helpEvents,
     supportUsed,
-    recoveryUsed,
+    recoveryRoutes,
     supportAssistedSuccess:
       evidence.supportAssistedSuccess ||
-      (outcome === 'success' && (helpUsed || supportUsed || recoveryUsed)),
+      (outcome === 'success' &&
+        (supportUsed || recoveryRoutes.length > 0)),
   }
 }
 
-function createMappingEvidence(): Record<Lesson1MappingId, AttemptEvidence> {
+function createMappingEvidence(): Record<
+  Lesson1MappingId,
+  ReciprocalRetrievalEvidence
+> {
   return Object.fromEntries(
-    LESSON1_MAPPING_IDS.map((id) => [id, emptyAttemptEvidence()]),
-  ) as Record<Lesson1MappingId, AttemptEvidence>
+    LESSON1_MAPPING_IDS.map((id) => [id, emptyReciprocalEvidence()]),
+  ) as Record<Lesson1MappingId, ReciprocalRetrievalEvidence>
 }
 
 export function createInitialLesson1State(): Lesson1RuntimeState {
@@ -88,13 +151,20 @@ export function createInitialLesson1State(): Lesson1RuntimeState {
     completedEpisodes: [],
     mappingEvidence: createMappingEvidence(),
     difficultParts: {
-      vowelContrast: emptyAttemptEvidence(),
+      vowelContrast: emptyReciprocalEvidence(),
       cluster: emptyAttemptEvidence(),
     },
     reconstruction: emptyAttemptEvidence(),
     reducedReading: {
       ...emptyAttemptEvidence(),
-      semanticReconnectionOutcome: 'not-attempted',
+      firstResponseOutcome: 'not-attempted',
+      independentRetryOutcome: 'not-attempted',
+      postRecoveryReadingOutcome: 'not-attempted',
+      semanticReconnection: {
+        outcome: 'not-attempted',
+        contextualSupportUsed: false,
+        recoveryUsed: false,
+      },
     },
     lessonCompleted: false,
     carryForwardReady: false,
@@ -104,6 +174,7 @@ export function createInitialLesson1State(): Lesson1RuntimeState {
 export function recordMappingAttempt(
   state: Lesson1RuntimeState,
   mappingId: Lesson1MappingId,
+  direction: RetrievalDirection,
   outcome: Exclude<AttemptOutcome, 'not-attempted'>,
   flags?: AttemptFlags,
 ): Lesson1RuntimeState {
@@ -111,14 +182,21 @@ export function recordMappingAttempt(
     ...state,
     mappingEvidence: {
       ...state.mappingEvidence,
-      [mappingId]: recordAttempt(state.mappingEvidence[mappingId], outcome, flags),
+      [mappingId]: {
+        ...state.mappingEvidence[mappingId],
+        [direction]: recordAttempt(
+          state.mappingEvidence[mappingId][direction],
+          outcome,
+          flags,
+        ),
+      },
     },
   }
 }
 
-export function recordDifficultPartAttempt(
+export function recordVowelContrastAttempt(
   state: Lesson1RuntimeState,
-  part: 'vowelContrast' | 'cluster',
+  direction: RetrievalDirection,
   outcome: Exclude<AttemptOutcome, 'not-attempted'>,
   flags?: AttemptFlags,
 ): Lesson1RuntimeState {
@@ -126,7 +204,28 @@ export function recordDifficultPartAttempt(
     ...state,
     difficultParts: {
       ...state.difficultParts,
-      [part]: recordAttempt(state.difficultParts[part], outcome, flags),
+      vowelContrast: {
+        ...state.difficultParts.vowelContrast,
+        [direction]: recordAttempt(
+          state.difficultParts.vowelContrast[direction],
+          outcome,
+          flags,
+        ),
+      },
+    },
+  }
+}
+
+export function recordClusterAttempt(
+  state: Lesson1RuntimeState,
+  outcome: Exclude<AttemptOutcome, 'not-attempted'>,
+  flags?: AttemptFlags,
+): Lesson1RuntimeState {
+  return {
+    ...state,
+    difficultParts: {
+      ...state.difficultParts,
+      cluster: recordAttempt(state.difficultParts.cluster, outcome, flags),
     },
   }
 }
@@ -142,44 +241,86 @@ export function recordReconstructionAttempt(
   }
 }
 
-export function recordReducedReadingAttempt(
+export function recordReducedReadingFirstResponse(
   state: Lesson1RuntimeState,
   outcome: Exclude<AttemptOutcome, 'not-attempted'>,
-  flags?: AttemptFlags,
 ): Lesson1RuntimeState {
-  const nextEvidence = recordAttempt(state.reducedReading, outcome, flags)
-
+  const evidence = recordAttempt(state.reducedReading, outcome)
   return {
     ...state,
     reducedReading: {
-      ...nextEvidence,
-      semanticReconnectionOutcome:
-        state.reducedReading.semanticReconnectionOutcome,
+      ...state.reducedReading,
+      ...evidence,
+      firstResponseOutcome:
+        state.reducedReading.firstResponseOutcome === 'not-attempted'
+          ? outcome
+          : state.reducedReading.firstResponseOutcome,
     },
   }
 }
 
-export function markReducedReadingHelpUsed(
+export function recordReducedReadingIndependentRetry(
   state: Lesson1RuntimeState,
+  outcome: Exclude<AttemptOutcome, 'not-attempted'>,
+): Lesson1RuntimeState {
+  const evidence = recordAttempt(state.reducedReading, outcome)
+  return {
+    ...state,
+    reducedReading: {
+      ...state.reducedReading,
+      ...evidence,
+      independentRetryOutcome: outcome,
+    },
+  }
+}
+
+export function recordReducedReadingHelp(
+  state: Lesson1RuntimeState,
+  classification: HelpClassification,
+  timing: ReducedReadingHelpTiming,
+): Lesson1RuntimeState {
+  const supportUsed =
+    state.reducedReading.supportUsed || isEvidenceAlteringHelp(classification)
+  return {
+    ...state,
+    reducedReading: {
+      ...state.reducedReading,
+      helpEvents: [
+        ...state.reducedReading.helpEvents,
+        { classification, timing },
+      ],
+      supportUsed,
+    },
+  }
+}
+
+export function recordReducedReadingRecovery(
+  state: Lesson1RuntimeState,
+  route: RecoveryRoute,
 ): Lesson1RuntimeState {
   return {
     ...state,
     reducedReading: {
       ...state.reducedReading,
-      helpUsed: true,
-    },
-  }
-}
-
-export function markReducedReadingRecoveryUsed(
-  state: Lesson1RuntimeState,
-): Lesson1RuntimeState {
-  return {
-    ...state,
-    reducedReading: {
-      ...state.reducedReading,
-      recoveryUsed: true,
       supportUsed: true,
+      recoveryRoutes: [...state.reducedReading.recoveryRoutes, route],
+    },
+  }
+}
+
+export function recordPostRecoveryReading(
+  state: Lesson1RuntimeState,
+  outcome: Exclude<AttemptOutcome, 'not-attempted'>,
+): Lesson1RuntimeState {
+  const evidence = recordAttempt(state.reducedReading, outcome, {
+    supportUsed: true,
+  })
+  return {
+    ...state,
+    reducedReading: {
+      ...state.reducedReading,
+      ...evidence,
+      postRecoveryReadingOutcome: outcome,
     },
   }
 }
@@ -187,12 +328,20 @@ export function markReducedReadingRecoveryUsed(
 export function recordSemanticReconnection(
   state: Lesson1RuntimeState,
   outcome: Exclude<AttemptOutcome, 'not-attempted'>,
+  flags: {
+    contextualSupportUsed?: boolean
+    recoveryUsed?: boolean
+  } = {},
 ): Lesson1RuntimeState {
   return {
     ...state,
     reducedReading: {
       ...state.reducedReading,
-      semanticReconnectionOutcome: outcome,
+      semanticReconnection: {
+        outcome,
+        contextualSupportUsed: flags.contextualSupportUsed === true,
+        recoveryUsed: flags.recoveryUsed === true,
+      },
     },
   }
 }
@@ -200,15 +349,10 @@ export function recordSemanticReconnection(
 export function completeCurrentEpisode(
   state: Lesson1RuntimeState,
 ): Lesson1RuntimeState {
-  if (state.lessonCompleted) {
-    return state
-  }
+  if (state.lessonCompleted) return state
 
   const currentIndex = LESSON1_EPISODE_IDS.indexOf(state.currentEpisode)
-
-  if (currentIndex < 0) {
-    throw new Error('Unknown Lesson 1 episode')
-  }
+  if (currentIndex < 0) throw new Error('Unknown Lesson 1 episode')
 
   const completedEpisodes = [...state.completedEpisodes, state.currentEpisode]
   const nextEpisode = LESSON1_EPISODE_IDS[currentIndex + 1]
