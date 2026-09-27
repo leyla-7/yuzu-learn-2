@@ -20,8 +20,11 @@ export type {
 } from './contracts'
 
 export {
+  ACCESSIBLE_L9_COMPONENTS,
   completeCurrentEpisode,
   createInitialLesson1State,
+  recordAccessibleL9Help,
+  recordAccessibleL9Reintegration,
   recordClusterAttempt,
   recordMappingAttempt,
   recordPostRecoveryReading,
@@ -32,14 +35,24 @@ export {
   recordReducedReadingRecovery,
   recordSemanticReconnection,
   recordVowelContrastAttempt,
+  selectAccessibleL9Component,
+  selectL9Route,
+  submitAccessibleL9Sequence,
+  undoAccessibleL9Component,
 } from './state'
 
 export type {
+  AccessibleL9Component,
+  AccessibleL9Evidence,
+  AccessibleL9EvidenceClassification,
+  AccessibleL9HelpType,
   AttemptEvidence,
   AttemptFlags,
   AttemptOutcome,
   HelpClassification,
   HelpEvent,
+  L9Route,
+  L9RuntimeEvidence,
   Lesson1RuntimeState,
   ReciprocalRetrievalEvidence,
   RecoveryRoute,
