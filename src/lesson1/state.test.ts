@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   completeCurrentEpisode,
   createInitialLesson1State,
+  recordAccessibleL9Help,
+  recordAccessibleL9Reintegration,
   recordClusterAttempt,
   recordMappingAttempt,
   recordPostRecoveryReading,
@@ -12,6 +14,10 @@ import {
   recordReducedReadingRecovery,
   recordSemanticReconnection,
   recordVowelContrastAttempt,
+  selectAccessibleL9Component,
+  selectL9Route,
+  submitAccessibleL9Sequence,
+  undoAccessibleL9Component,
 } from './state'
 
 describe('WORK-YUZU-063 post-UX runtime evidence contracts', () => {
@@ -167,5 +173,139 @@ describe('WORK-YUZU-063 post-UX runtime evidence contracts', () => {
     expect(state.lessonCompleted).toBe(true)
     expect(state.carryForwardReady).toBe(true)
     expect(state.reducedReading.firstResponseOutcome).toBe('not-attempted')
+  })
+})
+
+describe('WORK-YUZU-063 accessible L9-A runtime delta', () => {
+  it('keeps visual and accessible L9 routes distinct', () => {
+    let state = createInitialLesson1State()
+    state = selectL9Route(state, 'accessible')
+
+    expect(state.l9.route).toBe('accessible')
+    expect(state.l9.accessible.entered).toBe(true)
+    expect(state.l9.visual.cleanReducedSupportReadingSuccess).toBe(false)
+  })
+
+  it('builds from six taught graphemes, removes selected instances, and undoes only the last component', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'accessible')
+    state = selectAccessibleL9Component(state, 'П')
+    state = selectAccessibleL9Component(state, 'р')
+
+    expect(state.l9.accessible.currentSequence).toEqual(['П', 'р'])
+    expect(state.l9.accessible.remainingComponents).toEqual([
+      'и',
+      'в',
+      'і',
+      'т',
+    ])
+
+    state = undoAccessibleL9Component(state)
+    expect(state.l9.accessible.currentSequence).toEqual(['П'])
+    expect(state.l9.accessible.remainingComponents).toContain('р')
+    expect(state.l9.accessible.undoUsed).toBe(true)
+  })
+
+  it('allows Check only after all six components are placed and records the first complete sequence', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'accessible')
+    state = selectAccessibleL9Component(state, 'П')
+    expect(() => submitAccessibleL9Sequence(state)).toThrow(
+      'Accessible L9 sequence is incomplete',
+    )
+
+    for (const component of ['р', 'и', 'в', 'і', 'т'] as const) {
+      state = selectAccessibleL9Component(state, component)
+    }
+    state = submitAccessibleL9Sequence(state)
+
+    expect(state.l9.accessible.submittedSequences).toEqual([
+      ['П', 'р', 'и', 'в', 'і', 'т'],
+    ])
+    expect(state.l9.accessible.firstSequenceOutcome).toBe('success')
+    expect(state.l9.accessible.reconstructionCompleted).toBe(true)
+    expect(state.l9.accessible.evidenceClassification).toBe(
+      'independent-first-attempt',
+    )
+    expect(state.l9.visual.cleanReducedSupportReadingSuccess).toBe(false)
+  })
+
+  it('records a full incorrect sequence without position feedback and supports an independent retry', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'accessible')
+    for (const component of ['П', 'р', 'і', 'в', 'и', 'т'] as const) {
+      state = selectAccessibleL9Component(state, component)
+    }
+    state = submitAccessibleL9Sequence(state)
+
+    expect(state.l9.accessible.firstSequenceOutcome).toBe('failure')
+    expect(state.l9.accessible.currentSequence).toEqual([])
+    expect(state.l9.accessible.independentRetryCount).toBe(1)
+
+    for (const component of ['П', 'р', 'и', 'в', 'і', 'т'] as const) {
+      state = selectAccessibleL9Component(state, component)
+    }
+    state = submitAccessibleL9Sequence(state)
+
+    expect(state.l9.accessible.evidenceClassification).toBe(
+      'independent-retry',
+    )
+    expect(state.l9.accessible.submittedSequences).toHaveLength(2)
+  })
+
+  it('tracks Help levels, targeted reviews, and supported reconstruction classification', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'accessible')
+    state = recordAccessibleL9Help(state, 'level-1-neutral-review')
+    state = recordAccessibleL9Help(state, 'level-2-vowel-contrast')
+    state = recordAccessibleL9Help(state, 'level-2-cluster')
+
+    expect(state.l9.accessible.helpOpened).toBe(true)
+    expect(state.l9.accessible.helpEvents).toEqual([
+      'level-1-neutral-review',
+      'level-2-vowel-contrast',
+      'level-2-cluster',
+    ])
+    expect(state.l9.accessible.vowelContrastReviewUsed).toBe(true)
+    expect(state.l9.accessible.clusterReviewUsed).toBe(true)
+    expect(state.l9.accessible.answerBearingSupportExposed).toBe(false)
+
+    for (const component of ['П', 'р', 'и', 'в', 'і', 'т'] as const) {
+      state = selectAccessibleL9Component(state, component)
+    }
+    state = submitAccessibleL9Sequence(state)
+    expect(state.l9.accessible.evidenceClassification).toBe(
+      'supported-reconstruction',
+    )
+  })
+
+  it('classifies answer-bearing recovery separately and never aliases visual reading success', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'accessible')
+    state = recordAccessibleL9Help(state, 'level-3-answer-reveal')
+
+    for (const component of ['П', 'р', 'и', 'в', 'і', 'т'] as const) {
+      state = selectAccessibleL9Component(state, component)
+    }
+    state = submitAccessibleL9Sequence(state)
+    state = recordAccessibleL9Reintegration(state)
+
+    expect(state.l9.accessible.answerBearingSupportExposed).toBe(true)
+    expect(state.l9.accessible.evidenceClassification).toBe(
+      'answer-revealed-recovery',
+    )
+    expect(state.l9.accessible.semanticReintegrationCompleted).toBe(true)
+    expect(state.l9.visual.cleanReducedSupportReadingSuccess).toBe(false)
+  })
+
+  it('preserves shared Lesson completion without converting accessible evidence into visual evidence', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'accessible')
+    for (const component of ['П', 'р', 'и', 'в', 'і', 'т'] as const) {
+      state = selectAccessibleL9Component(state, component)
+    }
+    state = submitAccessibleL9Sequence(state)
+    state = recordAccessibleL9Reintegration(state)
+    for (let index = 0; index < 7; index += 1) {
+      state = completeCurrentEpisode(state)
+    }
+
+    expect(state.lessonCompleted).toBe(true)
+    expect(state.l9.sharedLessonCompletionReached).toBe(true)
+    expect(state.l9.visual.cleanReducedSupportReadingSuccess).toBe(false)
   })
 })
