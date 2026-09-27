@@ -20,6 +20,31 @@ export type RecoveryRoute =
   | 'individual-mapping'
   | 'guided-reconstruction-general'
 
+export type L9Route = 'unselected' | 'visual' | 'accessible'
+export type AccessibleL9Component = 'П' | 'р' | 'и' | 'в' | 'і' | 'т'
+export type AccessibleL9HelpType =
+  | 'level-1-neutral-review'
+  | 'level-2-vowel-contrast'
+  | 'level-2-cluster'
+  | 'level-3-answer-reveal'
+export type AccessibleL9EvidenceClassification =
+  | 'not-classified'
+  | 'independent-first-attempt'
+  | 'independent-retry'
+  | 'supported-reconstruction'
+  | 'answer-revealed-recovery'
+
+export const ACCESSIBLE_L9_COMPONENTS: readonly AccessibleL9Component[] = [
+  'П',
+  'р',
+  'и',
+  'в',
+  'і',
+  'т',
+]
+
+const ACCESSIBLE_L9_TARGET_SEQUENCE = ACCESSIBLE_L9_COMPONENTS
+
 export interface HelpEvent {
   classification: HelpClassification
 }
@@ -57,6 +82,33 @@ export interface ReducedReadingEvidence extends AttemptEvidence {
   semanticReconnection: SemanticReconnectionEvidence
 }
 
+export interface AccessibleL9Evidence {
+  entered: boolean
+  currentSequence: readonly AccessibleL9Component[]
+  remainingComponents: readonly AccessibleL9Component[]
+  submittedSequences: readonly (readonly AccessibleL9Component[])[]
+  firstSequenceOutcome: AttemptOutcome
+  undoUsed: boolean
+  independentRetryCount: number
+  helpOpened: boolean
+  helpEvents: readonly AccessibleL9HelpType[]
+  vowelContrastReviewUsed: boolean
+  clusterReviewUsed: boolean
+  answerBearingSupportExposed: boolean
+  reconstructionCompleted: boolean
+  evidenceClassification: AccessibleL9EvidenceClassification
+  semanticReintegrationCompleted: boolean
+}
+
+export interface L9RuntimeEvidence {
+  route: L9Route
+  visual: {
+    cleanReducedSupportReadingSuccess: boolean
+  }
+  accessible: AccessibleL9Evidence
+  sharedLessonCompletionReached: boolean
+}
+
 export interface Lesson1RuntimeState {
   currentEpisode: Lesson1EpisodeId
   completedEpisodes: readonly Lesson1EpisodeId[]
@@ -67,6 +119,7 @@ export interface Lesson1RuntimeState {
   }
   reconstruction: AttemptEvidence
   reducedReading: ReducedReadingEvidence
+  l9: L9RuntimeEvidence
   lessonCompleted: boolean
   carryForwardReady: boolean
 }
@@ -93,6 +146,26 @@ function emptyReciprocalEvidence(): ReciprocalRetrievalEvidence {
   return {
     'sound-to-grapheme': emptyAttemptEvidence(),
     'grapheme-to-sound': emptyAttemptEvidence(),
+  }
+}
+
+function emptyAccessibleL9Evidence(): AccessibleL9Evidence {
+  return {
+    entered: false,
+    currentSequence: [],
+    remainingComponents: [...ACCESSIBLE_L9_COMPONENTS],
+    submittedSequences: [],
+    firstSequenceOutcome: 'not-attempted',
+    undoUsed: false,
+    independentRetryCount: 0,
+    helpOpened: false,
+    helpEvents: [],
+    vowelContrastReviewUsed: false,
+    clusterReviewUsed: false,
+    answerBearingSupportExposed: false,
+    reconstructionCompleted: false,
+    evidenceClassification: 'not-classified',
+    semanticReintegrationCompleted: false,
   }
 }
 
@@ -131,8 +204,7 @@ function recordAttempt(
     recoveryRoutes,
     supportAssistedSuccess:
       evidence.supportAssistedSuccess ||
-      (outcome === 'success' &&
-        (supportUsed || recoveryRoutes.length > 0)),
+      (outcome === 'success' && (supportUsed || recoveryRoutes.length > 0)),
   }
 }
 
@@ -167,8 +239,201 @@ export function createInitialLesson1State(): Lesson1RuntimeState {
         recoveryUsed: false,
       },
     },
+    l9: {
+      route: 'unselected',
+      visual: {
+        cleanReducedSupportReadingSuccess: false,
+      },
+      accessible: emptyAccessibleL9Evidence(),
+      sharedLessonCompletionReached: false,
+    },
     lessonCompleted: false,
     carryForwardReady: false,
+  }
+}
+
+export function selectL9Route(
+  state: Lesson1RuntimeState,
+  route: Exclude<L9Route, 'unselected'>,
+): Lesson1RuntimeState {
+  if (state.l9.route !== 'unselected' && state.l9.route !== route) {
+    throw new Error('L9 route is already selected')
+  }
+
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      route,
+      accessible:
+        route === 'accessible'
+          ? { ...state.l9.accessible, entered: true }
+          : state.l9.accessible,
+    },
+  }
+}
+
+function requireAccessibleL9(state: Lesson1RuntimeState): AccessibleL9Evidence {
+  if (state.l9.route !== 'accessible' || !state.l9.accessible.entered) {
+    throw new Error('Accessible L9 route is not active')
+  }
+  return state.l9.accessible
+}
+
+export function selectAccessibleL9Component(
+  state: Lesson1RuntimeState,
+  component: AccessibleL9Component,
+): Lesson1RuntimeState {
+  const accessible = requireAccessibleL9(state)
+  if (!accessible.remainingComponents.includes(component)) {
+    throw new Error('Accessible L9 component is not available')
+  }
+
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      accessible: {
+        ...accessible,
+        currentSequence: [...accessible.currentSequence, component],
+        remainingComponents: accessible.remainingComponents.filter(
+          (candidate) => candidate !== component,
+        ),
+      },
+    },
+  }
+}
+
+export function undoAccessibleL9Component(
+  state: Lesson1RuntimeState,
+): Lesson1RuntimeState {
+  const accessible = requireAccessibleL9(state)
+  const removed = accessible.currentSequence.at(-1)
+  if (removed === undefined) return state
+
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      accessible: {
+        ...accessible,
+        currentSequence: accessible.currentSequence.slice(0, -1),
+        remainingComponents: [...accessible.remainingComponents, removed],
+        undoUsed: true,
+      },
+    },
+  }
+}
+
+export function recordAccessibleL9Help(
+  state: Lesson1RuntimeState,
+  helpType: AccessibleL9HelpType,
+): Lesson1RuntimeState {
+  const accessible = requireAccessibleL9(state)
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      accessible: {
+        ...accessible,
+        helpOpened: true,
+        helpEvents: [...accessible.helpEvents, helpType],
+        vowelContrastReviewUsed:
+          accessible.vowelContrastReviewUsed ||
+          helpType === 'level-2-vowel-contrast',
+        clusterReviewUsed:
+          accessible.clusterReviewUsed || helpType === 'level-2-cluster',
+        answerBearingSupportExposed:
+          accessible.answerBearingSupportExposed ||
+          helpType === 'level-3-answer-reveal',
+      },
+    },
+  }
+}
+
+function sequencesMatch(
+  actual: readonly AccessibleL9Component[],
+  expected: readonly AccessibleL9Component[],
+): boolean {
+  return actual.every((component, index) => component === expected[index])
+}
+
+function classifyAccessibleL9Success(
+  accessible: AccessibleL9Evidence,
+): AccessibleL9EvidenceClassification {
+  if (accessible.answerBearingSupportExposed) {
+    return 'answer-revealed-recovery'
+  }
+  if (accessible.clusterReviewUsed || accessible.vowelContrastReviewUsed) {
+    return 'supported-reconstruction'
+  }
+  if (accessible.submittedSequences.length > 0) {
+    return 'independent-retry'
+  }
+  return 'independent-first-attempt'
+}
+
+export function submitAccessibleL9Sequence(
+  state: Lesson1RuntimeState,
+): Lesson1RuntimeState {
+  const accessible = requireAccessibleL9(state)
+  if (accessible.currentSequence.length !== ACCESSIBLE_L9_COMPONENTS.length) {
+    throw new Error('Accessible L9 sequence is incomplete')
+  }
+
+  const submittedSequence = [...accessible.currentSequence]
+  const success = sequencesMatch(
+    submittedSequence,
+    ACCESSIBLE_L9_TARGET_SEQUENCE,
+  )
+  const firstSequenceOutcome =
+    accessible.firstSequenceOutcome === 'not-attempted'
+      ? success
+        ? 'success'
+        : 'failure'
+      : accessible.firstSequenceOutcome
+
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      accessible: {
+        ...accessible,
+        currentSequence: success ? submittedSequence : [],
+        remainingComponents: success ? [] : [...ACCESSIBLE_L9_COMPONENTS],
+        submittedSequences: [
+          ...accessible.submittedSequences,
+          submittedSequence,
+        ],
+        firstSequenceOutcome,
+        independentRetryCount:
+          accessible.independentRetryCount + (success ? 0 : 1),
+        reconstructionCompleted: success,
+        evidenceClassification: success
+          ? classifyAccessibleL9Success(accessible)
+          : accessible.evidenceClassification,
+      },
+    },
+  }
+}
+
+export function recordAccessibleL9Reintegration(
+  state: Lesson1RuntimeState,
+): Lesson1RuntimeState {
+  const accessible = requireAccessibleL9(state)
+  if (!accessible.reconstructionCompleted) {
+    throw new Error('Accessible L9 reconstruction is not complete')
+  }
+
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      accessible: {
+        ...accessible,
+        semanticReintegrationCompleted: true,
+      },
+    },
   }
 }
 
@@ -365,6 +630,10 @@ export function completeCurrentEpisode(
     return {
       ...state,
       completedEpisodes,
+      l9: {
+        ...state.l9,
+        sharedLessonCompletionReached: true,
+      },
       lessonCompleted: true,
       carryForwardReady: true,
     }
