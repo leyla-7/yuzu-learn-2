@@ -1,4 +1,24 @@
 export {
+  BUILD_PASS_CONFIGS,
+  LESSON1_AUDIO_ASSETS,
+  LESSON1_BROWSER_STEPS,
+  createMappingPractice,
+  createVowelPractice,
+  getVisualL9Options,
+  scheduleAdaptiveRetry,
+} from './browser-model'
+
+export type {
+  Lesson1AudioAssetId,
+  Lesson1BrowserStep,
+  MappingAudioAssetId,
+  MappingPracticeTrial,
+  TaughtGrapheme,
+  VisualL9Option,
+  VowelPracticeTrial,
+} from './browser-model'
+
+export {
   LESSON1_CONTENT_SLOT_IDS,
   LESSON1_EPISODE_IDS,
   LESSON1_MAPPING_IDS,
@@ -35,6 +55,8 @@ export {
   recordReducedReadingRecovery,
   recordSemanticReconnection,
   recordVowelContrastAttempt,
+  recordVisualL9Attempt,
+  recordVisualL9Help,
   selectAccessibleL9Component,
   selectL9Route,
   submitAccessibleL9Sequence,
@@ -52,6 +74,8 @@ export type {
   HelpClassification,
   HelpEvent,
   L9Route,
+  VisualL9Evidence,
+  VisualL9OptionId,
   L9RuntimeEvidence,
   Lesson1RuntimeState,
   ReciprocalRetrievalEvidence,
