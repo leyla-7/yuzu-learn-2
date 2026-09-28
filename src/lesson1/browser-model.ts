@@ -179,6 +179,11 @@ export function createVowelPractice(): readonly VowelPracticeTrial[] {
   ]
 }
 
+export const ACCESSIBLE_L9_HELP_TRIGGERS = {
+  vowel: { label: 'и / і' },
+  beginning: { label: 'Listen', audioId: 'beginningPr' },
+} as const
+
 export const BUILD_PASS_CONFIGS = [
   {
     mode: 'supported',
