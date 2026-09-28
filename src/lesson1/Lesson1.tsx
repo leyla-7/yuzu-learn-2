@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
+  ACCESSIBLE_L9_HELP_TRIGGERS,
   BUILD_PASS_CONFIGS,
   LESSON1_AUDIO_ASSETS,
   createMappingPractice,
@@ -845,16 +846,13 @@ function AccessibleL9({
             lang="uk"
             onClick={useVowelHelp}
           >
-            и / і
+            {ACCESSIBLE_L9_HELP_TRIGGERS.vowel.label}
           </button>
-          <button
-            className="help-chip"
-            type="button"
-            lang="uk"
-            onClick={useBeginningHelp}
-          >
-            П + р
-          </button>
+          <AudioControl
+            audioId={ACCESSIBLE_L9_HELP_TRIGGERS.beginning.audioId}
+            label={ACCESSIBLE_L9_HELP_TRIGGERS.beginning.label}
+            onChoose={useBeginningHelp}
+          />
           {accessible.submittedSequences.length >= 2 ? (
             <button
               className="help-chip"
