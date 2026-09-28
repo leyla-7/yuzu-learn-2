@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ACCESSIBLE_L9_HELP_TRIGGERS,
   BUILD_PASS_CONFIGS,
   LESSON1_AUDIO_ASSETS,
   LESSON1_BROWSER_STEPS,
@@ -92,6 +93,15 @@ describe('WORK-YUZU-063 browser implementation model', () => {
       targetReferenceVisible: false,
       automaticNextCue: false,
     })
+  })
+
+  it('keeps the beginning-support trigger neutral until the learner activates it', () => {
+    expect(ACCESSIBLE_L9_HELP_TRIGGERS.beginning).toEqual({
+      label: 'Listen',
+      audioId: 'beginningPr',
+    })
+    expect(JSON.stringify(ACCESSIBLE_L9_HELP_TRIGGERS)).not.toContain('П + р')
+    expect(JSON.stringify(ACCESSIBLE_L9_HELP_TRIGGERS)).not.toContain('Привіт')
   })
 
   it('keeps L9 foil spellings internal while binding the qualified audio identifiers', () => {
