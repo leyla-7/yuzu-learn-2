@@ -10,6 +10,7 @@ describe('Lesson 1 browser shell', () => {
     expect(markup).toContain('Привіт')
     expect(markup).toContain('Replay')
     expect(markup).toContain('Continue')
+    expect(markup.match(/Привіт/g)).toHaveLength(1)
     expect(markup).not.toContain('Technical foundation')
   })
 })
