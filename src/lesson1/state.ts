@@ -21,6 +21,7 @@ export type RecoveryRoute =
   | 'guided-reconstruction-general'
 
 export type L9Route = 'unselected' | 'visual' | 'accessible'
+export type VisualL9OptionId = 'l9-target' | 'l9-f1' | 'l9-f2'
 export type AccessibleL9Component = 'П' | 'р' | 'и' | 'в' | 'і' | 'т'
 export type AccessibleL9HelpType =
   | 'level-1-neutral-review'
@@ -100,11 +101,18 @@ export interface AccessibleL9Evidence {
   semanticReintegrationCompleted: boolean
 }
 
+export interface VisualL9Evidence {
+  submittedOptionIds: readonly VisualL9OptionId[]
+  firstResponseOutcome: AttemptOutcome
+  independentRetryCount: number
+  helpUsed: boolean
+  answerBearingSupportExposed: boolean
+  cleanReducedSupportReadingSuccess: boolean
+}
+
 export interface L9RuntimeEvidence {
   route: L9Route
-  visual: {
-    cleanReducedSupportReadingSuccess: boolean
-  }
+  visual: VisualL9Evidence
   accessible: AccessibleL9Evidence
   sharedLessonCompletionReached: boolean
 }
@@ -242,6 +250,11 @@ export function createInitialLesson1State(): Lesson1RuntimeState {
     l9: {
       route: 'unselected',
       visual: {
+        submittedOptionIds: [],
+        firstResponseOutcome: 'not-attempted',
+        independentRetryCount: 0,
+        helpUsed: false,
+        answerBearingSupportExposed: false,
         cleanReducedSupportReadingSuccess: false,
       },
       accessible: emptyAccessibleL9Evidence(),
@@ -269,6 +282,67 @@ export function selectL9Route(
         route === 'accessible'
           ? { ...state.l9.accessible, entered: true }
           : state.l9.accessible,
+    },
+  }
+}
+
+function requireVisualL9(state: Lesson1RuntimeState): VisualL9Evidence {
+  if (state.l9.route !== 'visual') {
+    throw new Error('Visual L9 route is not active')
+  }
+  return state.l9.visual
+}
+
+export function recordVisualL9Help(
+  state: Lesson1RuntimeState,
+  answerBearing = false,
+): Lesson1RuntimeState {
+  const visual = requireVisualL9(state)
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      visual: {
+        ...visual,
+        helpUsed: true,
+        answerBearingSupportExposed:
+          visual.answerBearingSupportExposed || answerBearing,
+        cleanReducedSupportReadingSuccess: false,
+      },
+    },
+  }
+}
+
+export function recordVisualL9Attempt(
+  state: Lesson1RuntimeState,
+  optionId: VisualL9OptionId,
+): Lesson1RuntimeState {
+  const visual = requireVisualL9(state)
+  const success = optionId === 'l9-target'
+  const outcome: Exclude<AttemptOutcome, 'not-attempted'> = success
+    ? 'success'
+    : 'failure'
+  const hadPriorAttempt = visual.submittedOptionIds.length > 0
+
+  return {
+    ...state,
+    l9: {
+      ...state.l9,
+      visual: {
+        ...visual,
+        submittedOptionIds: [...visual.submittedOptionIds, optionId],
+        firstResponseOutcome:
+          visual.firstResponseOutcome === 'not-attempted'
+            ? outcome
+            : visual.firstResponseOutcome,
+        independentRetryCount:
+          visual.independentRetryCount + (hadPriorAttempt ? 1 : 0),
+        cleanReducedSupportReadingSuccess:
+          visual.cleanReducedSupportReadingSuccess ||
+          (success &&
+            !visual.helpUsed &&
+            !visual.answerBearingSupportExposed),
+      },
     },
   }
 }
