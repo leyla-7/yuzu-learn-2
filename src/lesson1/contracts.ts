@@ -95,19 +95,19 @@ export const LESSON1_PRODUCTION_FIXTURE: Lesson1ProductionFixture = {
       id: `content-${slot}`,
       owner: '14' as const,
       kind: 'content' as const,
-      status: 'pending' as const,
+      status: 'qualified' as const,
     })),
     {
       id: 'context-realization',
       owner: '21',
       kind: 'interaction',
-      status: 'pending',
+      status: 'qualified',
     },
     {
       id: 'ui-realization',
       owner: '22',
       kind: 'presentation',
-      status: 'pending',
+      status: 'qualified',
     },
   ],
   audio: [
