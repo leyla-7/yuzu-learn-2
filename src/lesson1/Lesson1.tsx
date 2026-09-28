@@ -305,15 +305,16 @@ function MappingPractice({
     )
   }
 
-  const retryKey = `${trial.mappingId}:${trial.direction}`
+  const activeTrial = trial
+  const retryKey = `${activeTrial.mappingId}:${activeTrial.direction}`
   const rotation = trialIndex % 3
 
   function record(outcome: 'success' | 'failure') {
     setRuntime((current) =>
       recordMappingAttempt(
         current,
-        trial.mappingId,
-        trial.direction,
+        activeTrial.mappingId,
+        activeTrial.direction,
         outcome,
       ),
     )
@@ -324,7 +325,7 @@ function MappingPractice({
     setFeedback('retry')
     const prior = retryCounts[retryKey] ?? 0
     if (prior < 1) {
-      setTrials((current) => scheduleAdaptiveRetry(current, trial, prior))
+      setTrials((current) => scheduleAdaptiveRetry(current, activeTrial, prior))
       setRetryCounts((current) => ({ ...current, [retryKey]: prior + 1 }))
     }
   }
@@ -335,7 +336,7 @@ function MappingPractice({
     setTrialIndex((current) => current + 1)
   }
 
-  const isSoundToPrint = trial.direction === 'sound-to-grapheme'
+  const isSoundToPrint = activeTrial.direction === 'sound-to-grapheme'
 
   return (
     <section className="lesson-card practice-step">
@@ -344,16 +345,16 @@ function MappingPractice({
       </div>
       {isSoundToPrint ? (
         <>
-          <AudioControl audioId={trial.promptAudioId!} label="Listen" />
+          <AudioControl audioId={activeTrial.promptAudioId!} label="Listen" />
           <div className="choice-row" role="group" aria-label="Tap">
-            {rotate(trial.graphemeChoices ?? [], rotation).map((choice) => (
+            {rotate(activeTrial.graphemeChoices ?? [], rotation).map((choice) => (
               <button
                 className="grapheme-button"
                 type="button"
                 lang="uk"
                 key={choice}
                 onClick={() =>
-                  choice === trial.correctGrapheme ? succeed() : fail()
+                  choice === activeTrial.correctGrapheme ? succeed() : fail()
                 }
               >
                 {choice}
@@ -364,17 +365,17 @@ function MappingPractice({
       ) : (
         <>
           <div className="focus-grapheme" lang="uk">
-            {trial.promptGrapheme}
+            {activeTrial.promptGrapheme}
           </div>
           <div className="audio-choice-row" role="group" aria-label="Listen">
-            {rotate(trial.audioChoices ?? [], rotation).map((choice, index) => (
+            {rotate(activeTrial.audioChoices ?? [], rotation).map((choice, index) => (
               <AudioControl
                 key={choice}
                 audioId={choice}
                 label="Listen"
                 index={index + 1}
                 onChoose={() =>
-                  choice === trial.correctAudioId ? succeed() : fail()
+                  choice === activeTrial.correctAudioId ? succeed() : fail()
                 }
               />
             ))}
@@ -416,11 +417,13 @@ function VowelPractice({
     )
   }
 
+  const activeTrial = trial
+
   function answer(correct: boolean) {
     setRuntime((current) =>
       recordVowelContrastAttempt(
         current,
-        trial.mappingId === 'y' ? trial.direction : trial.direction,
+        activeTrial.mappingId === 'y' ? activeTrial.direction : activeTrial.direction,
         correct ? 'success' : 'failure',
       ),
     )
@@ -441,17 +444,17 @@ function VowelPractice({
         <span lang="uk">и</span>
         <span lang="uk">і</span>
       </div>
-      {trial.direction === 'sound-to-grapheme' ? (
+      {activeTrial.direction === 'sound-to-grapheme' ? (
         <>
-          <AudioControl audioId={trial.audioId} label="Listen" />
+          <AudioControl audioId={activeTrial.audioId} label="Listen" />
           <div className="choice-row" role="group" aria-label="Tap">
-            {(trial.graphemeChoices ?? []).map((choice) => (
+            {(activeTrial.graphemeChoices ?? []).map((choice) => (
               <button
                 className="grapheme-button"
                 type="button"
                 lang="uk"
                 key={choice}
-                onClick={() => answer(choice === trial.grapheme)}
+                onClick={() => answer(choice === activeTrial.grapheme)}
               >
                 {choice}
               </button>
@@ -461,16 +464,16 @@ function VowelPractice({
       ) : (
         <>
           <div className="focus-grapheme" lang="uk">
-            {trial.grapheme}
+            {activeTrial.grapheme}
           </div>
           <div className="audio-choice-row" role="group" aria-label="Listen">
-            {(trial.audioChoices ?? []).map((choice, index) => (
+            {(activeTrial.audioChoices ?? []).map((choice, index) => (
               <AudioControl
                 key={choice}
                 audioId={choice}
                 label="Listen"
                 index={index + 1}
-                onChoose={() => answer(choice === trial.audioId)}
+                onChoose={() => answer(choice === activeTrial.audioId)}
               />
             ))}
           </div>
