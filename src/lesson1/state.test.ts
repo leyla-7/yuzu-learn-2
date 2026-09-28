@@ -4,6 +4,8 @@ import {
   createInitialLesson1State,
   recordAccessibleL9Help,
   recordAccessibleL9Reintegration,
+  recordVisualL9Attempt,
+  recordVisualL9Help,
   recordClusterAttempt,
   recordMappingAttempt,
   recordPostRecoveryReading,
@@ -306,6 +308,30 @@ describe('WORK-YUZU-063 accessible L9-A runtime delta', () => {
 
     expect(state.lessonCompleted).toBe(true)
     expect(state.l9.sharedLessonCompletionReached).toBe(true)
+    expect(state.l9.visual.cleanReducedSupportReadingSuccess).toBe(false)
+  })
+})
+
+
+describe('WORK-YUZU-063 standard visual L9 browser evidence', () => {
+  it('records the first visual response and independent retry without exposing foil text', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'visual')
+    state = recordVisualL9Attempt(state, 'l9-f1')
+    state = recordVisualL9Attempt(state, 'l9-target')
+
+    expect(state.l9.visual.submittedOptionIds).toEqual(['l9-f1', 'l9-target'])
+    expect(state.l9.visual.firstResponseOutcome).toBe('failure')
+    expect(state.l9.visual.independentRetryCount).toBe(1)
+    expect(state.l9.visual.cleanReducedSupportReadingSuccess).toBe(true)
+  })
+
+  it('does not emit clean reduced-support reading success after answer-bearing help', () => {
+    let state = selectL9Route(createInitialLesson1State(), 'visual')
+    state = recordVisualL9Help(state, true)
+    state = recordVisualL9Attempt(state, 'l9-target')
+
+    expect(state.l9.visual.helpUsed).toBe(true)
+    expect(state.l9.visual.answerBearingSupportExposed).toBe(true)
     expect(state.l9.visual.cleanReducedSupportReadingSuccess).toBe(false)
   })
 })
