@@ -208,7 +208,6 @@ function SceneArt({
         <span className="person-head" />
         <span className="person-body" />
       </span>
-      {isBeginning ? <span className="greeting-bubble">Привіт</span> : null}
     </div>
   )
 }
