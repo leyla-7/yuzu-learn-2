@@ -27,7 +27,7 @@ describe('WORK-YUZU-063 Lesson 1 production contracts', () => {
     })
   })
 
-  it('exposes C1-C7 as pending Content seams rather than learner-facing copy', () => {
+  it('marks the accepted C1-C7 Content inputs as qualified', () => {
     const contentInputs = LESSON1_PRODUCTION_FIXTURE.specialistInputs.filter(
       (input) => input.owner === '14',
     )
@@ -35,21 +35,21 @@ describe('WORK-YUZU-063 Lesson 1 production contracts', () => {
     expect(contentInputs.map((input) => input.id)).toEqual(
       LESSON1_CONTENT_SLOT_IDS.map((slot) => `content-${slot}`),
     )
-    expect(contentInputs.every((input) => input.status === 'pending')).toBe(true)
+    expect(contentInputs.every((input) => input.status === 'qualified')).toBe(true)
   })
 
-  it('keeps 21 and 22 realization inputs pending instead of guessing mechanics or presentation', () => {
+  it('marks the accepted 21 and 22 realization inputs as qualified', () => {
     expect(LESSON1_PRODUCTION_FIXTURE.specialistInputs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 'context-realization',
           owner: '21',
-          status: 'pending',
+          status: 'qualified',
         }),
         expect.objectContaining({
           id: 'ui-realization',
           owner: '22',
-          status: 'pending',
+          status: 'qualified',
         }),
       ]),
     )
