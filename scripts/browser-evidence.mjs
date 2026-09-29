@@ -107,6 +107,30 @@ async function clickExpression(expression, label) {
   await sleep(35)
 }
 
+async function focusExpression(expression, label) {
+  const result = await evaluate(`(() => { const el = ${expression}; if (!el) return false; el.focus(); return document.activeElement === el })()`)
+  if (!result) throw new Error(`Could not focus ${label}`)
+  await sleep(20)
+}
+
+async function pressEnter() {
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13,
+    nativeVirtualKeyCode: 13,
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    windowsVirtualKeyCode: 13,
+    nativeVirtualKeyCode: 13,
+  })
+  await sleep(40)
+}
+
 function byButtonText(text, selector = 'button') {
   return `[...document.querySelectorAll(${JSON.stringify(selector)})].find((el) => el.textContent.trim() === ${JSON.stringify(text)})`
 }
@@ -265,16 +289,51 @@ await assertBrowser("[...document.querySelectorAll('.accessible-l9-step button')
 await screenshot('accessible-l9-before-submit.png')
 evidence.screenshots.push('accessible-l9-before-submit.png')
 
-// Exercise ordered construction plus Undo, then submit.
-await clickButton('П', '.accessible-l9-step .grapheme-button')
-await clickButton('р', '.accessible-l9-step .grapheme-button')
-await clickButton('Undo', '.accessible-l9-step button')
-await clickButton('р', '.accessible-l9-step .grapheme-button')
-for (const component of ['и', 'в', 'і', 'т']) {
-  await clickButton(component, '.accessible-l9-step .grapheme-button')
+// Keyboard focus contract: selection must keep focus inside reconstruction.
+await focusExpression(
+  byButtonText('П', '.accessible-l9-step .grapheme-button'),
+  'first accessible grapheme',
+)
+await pressEnter()
+await assertBrowser(
+  "document.activeElement?.classList.contains('grapheme-button') === true && document.activeElement?.textContent?.trim() === 'р'",
+  'keyboard selection moves focus to the first remaining grapheme',
+)
+
+// Deliberately build an incorrect full sequence using keyboard activation.
+await focusExpression(
+  byButtonText('и', '.accessible-l9-step .grapheme-button'),
+  'out-of-order accessible grapheme',
+)
+await pressEnter()
+for (let index = 0; index < 4; index += 1) {
+  await pressEnter()
 }
-await assertBrowser("[...document.querySelectorAll('.accessible-l9-step button')].find((el) => el.textContent.trim() === 'Check')?.disabled === false", 'Check enables only after six components')
-await clickButton('Check', '.accessible-l9-step button')
+await assertBrowser(
+  "document.activeElement?.textContent?.trim() === 'Check' && document.activeElement?.disabled === false",
+  'focus moves to enabled Check after the sixth grapheme',
+)
+await pressEnter()
+await waitForExpression(
+  "document.querySelector('.accessible-l9-step .grapheme-button') !== null",
+  'accessible failed-check reset',
+)
+await assertBrowser(
+  "document.activeElement?.classList.contains('grapheme-button') === true && document.activeElement?.textContent?.trim() === 'П'",
+  'failed Check restores focus to first restored grapheme',
+)
+await screenshot('accessible-l9-focus-reset.png')
+evidence.screenshots.push('accessible-l9-focus-reset.png')
+
+// Retry correctly from the restored focus, using keyboard only.
+for (let index = 0; index < 6; index += 1) {
+  await pressEnter()
+}
+await assertBrowser(
+  "document.activeElement?.textContent?.trim() === 'Check' && document.activeElement?.disabled === false",
+  'keyboard retry remains inside reconstruction through Check',
+)
+await pressEnter()
 await waitForExpression("document.body.innerText.includes('Привіт')", 'accessible reintegration target')
 await assertBrowser("document.querySelector('[data-audio-id=\"audio/neutral-target\"]') !== null", 'target audio seam appears only after accessible reconstruction')
 await screenshot('accessible-l9-reintegration.png')
@@ -283,8 +342,10 @@ evidence.accessible = {
   targetHiddenBeforeSubmission: true,
   targetAudioHiddenBeforeSubmission: true,
   sixControls: true,
-  undoExercised: true,
   checkGatedUntilSix: true,
+  keyboardSelectionFocusRetained: true,
+  failedCheckFocusRestoredToFirstChoice: true,
+  keyboardRetryCompleted: true,
   targetAndAudioReintroducedAfterSuccessfulReconstruction: true,
 }
 

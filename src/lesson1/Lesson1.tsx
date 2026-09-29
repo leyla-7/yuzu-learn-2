@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ACCESSIBLE_L9_HELP_TRIGGERS,
   BUILD_PASS_CONFIGS,
@@ -696,8 +696,32 @@ function AccessibleL9({
   const [helpOpen, setHelpOpen] = useState(false)
   const [recoveryWordVisible, setRecoveryWordVisible] = useState(false)
   const [reintegrated, setReintegrated] = useState(false)
+  const choiceGroupRef = useRef<HTMLDivElement>(null)
+  const checkButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreReconstructionFocusRef = useRef(false)
+
+  useEffect(() => {
+    if (!restoreReconstructionFocusRef.current) return
+    restoreReconstructionFocusRef.current = false
+
+    const firstRemainingChoice =
+      choiceGroupRef.current?.querySelector<HTMLButtonElement>(
+        '.grapheme-button',
+      )
+
+    if (firstRemainingChoice) {
+      firstRemainingChoice.focus()
+      return
+    }
+
+    checkButtonRef.current?.focus()
+  }, [
+    accessible.currentSequence.length,
+    accessible.remainingComponents.length,
+  ])
 
   function choose(component: AccessibleL9Component) {
+    restoreReconstructionFocusRef.current = true
     setRuntime((current) => selectAccessibleL9Component(current, component))
     setFeedback('idle')
   }
@@ -739,6 +763,10 @@ function AccessibleL9({
       accessible.currentSequence,
       TARGET_SEQUENCE,
     )
+
+    if (!success) {
+      restoreReconstructionFocusRef.current = true
+    }
 
     setRuntime((current) => {
       const submitted = submitAccessibleL9Sequence(current)
@@ -801,7 +829,12 @@ function AccessibleL9({
           {accessible.currentSequence.join('')}
         </div>
       </div>
-      <div className="choice-row" role="group" aria-label="Build">
+      <div
+        className="choice-row"
+        role="group"
+        aria-label="Build"
+        ref={choiceGroupRef}
+      >
         {accessible.remainingComponents.map((component) => (
           <button
             className="grapheme-button"
@@ -829,6 +862,7 @@ function AccessibleL9({
         <button
           className="primary-action compact"
           type="button"
+          ref={checkButtonRef}
           disabled={
             accessible.currentSequence.length !== ACCESSIBLE_L9_COMPONENTS.length
           }
