@@ -120,6 +120,8 @@ async function pressEnter() {
     code: 'Enter',
     windowsVirtualKeyCode: 13,
     nativeVirtualKeyCode: 13,
+    text: '\r',
+    unmodifiedText: '\r',
   })
   await send('Input.dispatchKeyEvent', {
     type: 'keyUp',
