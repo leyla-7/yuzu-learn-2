@@ -128,7 +128,13 @@ async function pressEnter() {
     windowsVirtualKeyCode: 13,
     nativeVirtualKeyCode: 13,
   })
-  await sleep(40)
+}
+
+async function waitForActiveText(text, message) {
+  await waitForExpression(
+    `document.activeElement?.textContent?.trim() === ${JSON.stringify(text)}`,
+    message,
+  )
 }
 
 function byButtonText(text, selector = 'button') {
@@ -295,9 +301,13 @@ await focusExpression(
   'first accessible grapheme',
 )
 await pressEnter()
+await waitForActiveText(
+  'р',
+  'keyboard selection focus moves to the first remaining grapheme',
+)
 await assertBrowser(
-  "document.activeElement?.classList.contains('grapheme-button') === true && document.activeElement?.textContent?.trim() === 'р'",
-  'keyboard selection moves focus to the first remaining grapheme',
+  "document.activeElement?.classList.contains('grapheme-button') === true",
+  'keyboard selection keeps focus on a reconstruction grapheme',
 )
 
 // Deliberately build an incorrect full sequence using keyboard activation.
@@ -306,28 +316,37 @@ await focusExpression(
   'out-of-order accessible grapheme',
 )
 await pressEnter()
-for (let index = 0; index < 4; index += 1) {
+await waitForActiveText('р', 'focus after out-of-order second grapheme')
+for (const expectedFocus of ['в', 'і', 'т', 'Check']) {
   await pressEnter()
+  await waitForActiveText(
+    expectedFocus,
+    `keyboard reconstruction focus reaches ${expectedFocus}`,
+  )
 }
 await assertBrowser(
   "document.activeElement?.textContent?.trim() === 'Check' && document.activeElement?.disabled === false",
   'focus moves to enabled Check after the sixth grapheme',
 )
 await pressEnter()
-await waitForExpression(
-  "document.querySelector('.accessible-l9-step .grapheme-button') !== null",
-  'accessible failed-check reset',
+await waitForActiveText(
+  'П',
+  'failed Check restores focus to first restored grapheme',
 )
 await assertBrowser(
-  "document.activeElement?.classList.contains('grapheme-button') === true && document.activeElement?.textContent?.trim() === 'П'",
-  'failed Check restores focus to first restored grapheme',
+  "document.activeElement?.classList.contains('grapheme-button') === true",
+  'failed Check restores focus inside reconstruction choices',
 )
 await screenshot('accessible-l9-focus-reset.png')
 evidence.screenshots.push('accessible-l9-focus-reset.png')
 
 // Retry correctly from the restored focus, using keyboard only.
-for (let index = 0; index < 6; index += 1) {
+for (const expectedFocus of ['р', 'и', 'в', 'і', 'т', 'Check']) {
   await pressEnter()
+  await waitForActiveText(
+    expectedFocus,
+    `keyboard retry focus reaches ${expectedFocus}`,
+  )
 }
 await assertBrowser(
   "document.activeElement?.textContent?.trim() === 'Check' && document.activeElement?.disabled === false",
