@@ -26,7 +26,7 @@ const graphemeToAudio = {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function waitForHttp(url, attempts = 80) {
+async function waitForHttp(url, attempts = 200) {
   let lastError
   for (let index = 0; index < attempts; index += 1) {
     try {

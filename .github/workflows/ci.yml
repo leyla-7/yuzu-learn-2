@@ -54,7 +54,13 @@ jobs:
           }
           trap cleanup EXIT
 
-          node scripts/browser-evidence.mjs
+          if ! node scripts/browser-evidence.mjs; then
+            echo "--- Chrome log ---"
+            cat /tmp/yuzu-chrome.log || true
+            echo "--- HTTP server log ---"
+            cat /tmp/yuzu-http.log || true
+            exit 1
+          fi
 
       - name: Upload browser build
         uses: actions/upload-artifact@v4.6.2
