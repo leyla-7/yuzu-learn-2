@@ -17,19 +17,69 @@ export const LESSON1_BROWSER_STEPS = [
 
 export type Lesson1BrowserStep = (typeof LESSON1_BROWSER_STEPS)[number]
 
+const AUDIO_ROOT = '/audio/lesson1'
+
 export const LESSON1_AUDIO_ASSETS = {
-  contextualTarget: { id: 'audio/contextual-target', status: 'pending-13' },
-  neutralTarget: { id: 'audio/neutral-target', status: 'pending-13' },
-  p: { id: 'audio/component-p', status: 'pending-13' },
-  r: { id: 'audio/component-r', status: 'pending-13' },
-  y: { id: 'audio/component-y', status: 'pending-13' },
-  v: { id: 'audio/component-v', status: 'pending-13' },
-  i: { id: 'audio/component-i', status: 'pending-13' },
-  t: { id: 'audio/component-t', status: 'pending-13' },
-  beginningPr: { id: 'audio/beginning-pr', status: 'pending-13' },
-  l9Target: { id: 'audio/l9-target', status: 'pending-13' },
-  l9F1: { id: 'audio/l9-f1', status: 'pending-13' },
-  l9F2: { id: 'audio/l9-f2', status: 'pending-13' },
+  contextualTarget: {
+    id: 'audio/contextual-target',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/1.m4a`],
+  },
+  neutralTarget: {
+    id: 'audio/neutral-target',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/2.m4a`],
+  },
+  p: {
+    id: 'audio/component-p',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/3.m4a`],
+  },
+  r: {
+    id: 'audio/component-r',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/4.m4a`],
+  },
+  y: {
+    id: 'audio/component-y',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/5.m4a`],
+  },
+  v: {
+    id: 'audio/component-v',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/6.m4a`],
+  },
+  i: {
+    id: 'audio/component-i',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/7.m4a`],
+  },
+  t: {
+    id: 'audio/component-t',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/8.m4a`],
+  },
+  beginningPr: {
+    id: 'audio/beginning-pr',
+    status: 'accepted-component-sequence',
+    sources: [`${AUDIO_ROOT}/3.m4a`, `${AUDIO_ROOT}/4.m4a`],
+  },
+  l9Target: {
+    id: 'audio/l9-target',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/12.m4a`],
+  },
+  l9F1: {
+    id: 'audio/l9-f1',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/13.m4a`],
+  },
+  l9F2: {
+    id: 'audio/l9-f2',
+    status: 'accepted-real',
+    sources: [`${AUDIO_ROOT}/14.m4a`],
+  },
 } as const
 
 export type Lesson1AudioAssetId = keyof typeof LESSON1_AUDIO_ASSETS

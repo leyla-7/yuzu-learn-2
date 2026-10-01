@@ -129,25 +129,88 @@ function AudioControl({
   index?: number
 }) {
   const asset = LESSON1_AUDIO_ASSETS[audioId]
+  const mediaRef = useRef<HTMLAudioElement>(null)
+  const playbackGenerationRef = useRef(0)
+
+  async function playAcceptedSources(): Promise<boolean> {
+    const media = mediaRef.current
+    if (!media) return false
+
+    const generation = ++playbackGenerationRef.current
+    media.dataset.audioPlayback = 'playing'
+
+    for (const [sourceIndex, source] of asset.sources.entries()) {
+      if (generation !== playbackGenerationRef.current) return false
+
+      media.src = source
+      media.dataset.audioCurrentSource = source
+      media.dataset.audioSourceIndex = String(sourceIndex)
+      media.load()
+
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          media.removeEventListener('ended', onEnded)
+          media.removeEventListener('error', onError)
+        }
+        const onEnded = () => {
+          cleanup()
+          resolve()
+        }
+        const onError = () => {
+          cleanup()
+          reject(new Error(`Audio playback failed: ${source}`))
+        }
+
+        media.addEventListener('ended', onEnded, { once: true })
+        media.addEventListener('error', onError, { once: true })
+        void media.play().catch((error) => {
+          cleanup()
+          reject(error)
+        })
+      })
+    }
+
+    if (generation !== playbackGenerationRef.current) return false
+    media.dataset.audioPlayback = 'complete'
+    return true
+  }
+
+  async function activate() {
+    try {
+      if (await playAcceptedSources()) onChoose?.()
+    } catch (error) {
+      console.error('Lesson audio playback failed', asset.id, error)
+    }
+  }
+
   return (
-    <button
-      className="audio-control"
-      type="button"
-      data-audio-id={asset.id}
-      data-audio-status={asset.status}
-      aria-label={index === undefined ? label : `${label} ${index}`}
-      onClick={onChoose}
-    >
-      <span className="audio-icon" aria-hidden="true">
-        ▶
-      </span>
-      <span>{label}</span>
-      {index === undefined ? null : (
-        <span className="audio-index" aria-hidden="true">
-          {index}
+    <>
+      <button
+        className="audio-control"
+        type="button"
+        data-audio-id={asset.id}
+        data-audio-status={asset.status}
+        data-audio-sources={asset.sources.join('|')}
+        aria-label={index === undefined ? label : `${label} ${index}`}
+        onClick={() => void activate()}
+      >
+        <span className="audio-icon" aria-hidden="true">
+          ▶
         </span>
-      )}
-    </button>
+        <span>{label}</span>
+        {index === undefined ? null : (
+          <span className="audio-index" aria-hidden="true">
+            {index}
+          </span>
+        )}
+      </button>
+      <audio
+        ref={mediaRef}
+        preload="auto"
+        hidden
+        data-audio-media-id={asset.id}
+      />
+    </>
   )
 }
 

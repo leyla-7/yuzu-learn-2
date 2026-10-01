@@ -24,26 +24,29 @@ describe('WORK-YUZU-063 browser implementation model', () => {
     ])
   })
 
-  it('exposes every required audio seam as pending 13 asset validation', () => {
-    expect(Object.keys(LESSON1_AUDIO_ASSETS)).toEqual([
-      'contextualTarget',
-      'neutralTarget',
-      'p',
-      'r',
-      'y',
-      'v',
-      'i',
-      't',
-      'beginningPr',
-      'l9Target',
-      'l9F1',
-      'l9F2',
-    ])
-    expect(
-      Object.values(LESSON1_AUDIO_ASSETS).every(
-        (asset) => asset.status === 'pending-13',
-      ),
-    ).toBe(true)
+  it('binds the accepted Lesson-1 audio package to the existing runtime seams', () => {
+    expect(LESSON1_AUDIO_ASSETS).toMatchObject({
+      contextualTarget: { sources: ['/audio/lesson1/1.m4a'] },
+      neutralTarget: { sources: ['/audio/lesson1/2.m4a'] },
+      p: { sources: ['/audio/lesson1/3.m4a'] },
+      r: { sources: ['/audio/lesson1/4.m4a'] },
+      y: { sources: ['/audio/lesson1/5.m4a'] },
+      v: { sources: ['/audio/lesson1/6.m4a'] },
+      i: { sources: ['/audio/lesson1/7.m4a'] },
+      t: { sources: ['/audio/lesson1/8.m4a'] },
+      beginningPr: {
+        status: 'accepted-component-sequence',
+        sources: ['/audio/lesson1/3.m4a', '/audio/lesson1/4.m4a'],
+      },
+      l9Target: { sources: ['/audio/lesson1/12.m4a'] },
+      l9F1: { sources: ['/audio/lesson1/13.m4a'] },
+      l9F2: { sources: ['/audio/lesson1/14.m4a'] },
+    })
+
+    const serialized = JSON.stringify(LESSON1_AUDIO_ASSETS)
+    expect(serialized).not.toContain('/audio/lesson1/9.m4a')
+    expect(serialized).not.toContain('/audio/lesson1/10.m4a')
+    expect(serialized).not.toContain('pending-13')
   })
 
   it('requires active sound-to-print and print-to-sound work for every mapping', () => {
