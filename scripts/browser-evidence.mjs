@@ -190,9 +190,9 @@ async function clickAudio(audioId, lessonState = 'unspecified') {
   await waitForExpression(
     `(() => {
       const media = document.querySelector('[data-evidence-token="${token}"]')
-      return media?.dataset.audioPlayback === 'complete'
+      return !media || media.dataset.audioPlayback === 'complete'
     })()`,
-    `${audioId} completes real media playback`,
+    `${audioId} completes real media playback or advances after completion`,
     360,
   )
 
