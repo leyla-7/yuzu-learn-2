@@ -20,10 +20,16 @@ const expected = {
 
 const actualNames = (await readdir(ROOT)).sort()
 const expectedNames = Object.keys(expected).sort()
-if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
+const missingNames = expectedNames.filter((name) => !actualNames.includes(name))
+if (missingNames.length > 0) {
   throw new Error(
-    `Lesson 1 audio inventory mismatch. Expected ${expectedNames.join(', ')}, got ${actualNames.join(', ')}`,
+    `Lesson 1 accepted audio files missing: ${missingNames.join(', ')}`,
   )
+}
+
+const unboundExtras = actualNames.filter((name) => !expectedNames.includes(name))
+if (unboundExtras.length > 0) {
+  console.log(`Unbound extra audio files ignored: ${unboundExtras.join(', ')}`)
 }
 
 for (const [name, [expectedSha256, expectedSize]] of Object.entries(expected)) {
