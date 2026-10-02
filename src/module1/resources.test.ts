@@ -7,6 +7,7 @@ import {
   MODULE1_TARGETS,
   REUSED_W2_GRAPHEMES,
   assertValidQualifiedBindings,
+  getMissingRequiredBindings,
 } from './resources'
 
 describe('Module-1 language/resource contract', () => {
@@ -40,9 +41,16 @@ describe('Module-1 language/resource contract', () => {
     expect(K2_GRAPHEMES).not.toContain('Й')
   })
 
-  it('uses symbolic qualified resource slots rather than final asset paths', () => {
-    expect(MODULE1_RESOURCE_SLOTS.w2TargetAudio.id).toBe('w2.target-audio')
-    expect(MODULE1_RESOURCE_SLOTS.reusedVInW2.grapheme).toBe('в')
+  it('reflects 13-qualified W2 asset classes without inventing final files', () => {
+    expect(MODULE1_RESOURCE_SLOTS.w2ContextualAudio.requirement).toBe('required')
+    expect(MODULE1_RESOURCE_SLOTS.w2NeutralEvidenceAudio.requirement).toBe(
+      'required',
+    )
+    expect(MODULE1_RESOURCE_SLOTS.reusedVInW2.requirement).toBe('conditional')
+    expect(MODULE1_RESOURCE_SLOTS.w2SupportBu.requirement).toBe('conditional')
+    expect(MODULE1_RESOURCE_SLOTS.w1TargetAudio.requirement).toBe(
+      'reuse-existing',
+    )
     expect(
       Object.values(MODULE1_RESOURCE_SLOTS).every(
         (slot) => slot.qualification === 'qualified-binding-required',
@@ -50,23 +58,36 @@ describe('Module-1 language/resource contract', () => {
     ).toBe(true)
   })
 
+  it('reports genuinely missing required W2 bindings while excluding conditional support', () => {
+    const missing = getMissingRequiredBindings([])
+
+    expect(missing).toContain('w2.contextual-target-audio')
+    expect(missing).toContain('w2.neutral-evidence-audio')
+    expect(missing).toContain('g2.Б.sound-model')
+    expect(missing).toContain('g2.у.sound-model')
+    expect(missing).toContain('g2.а.sound-model')
+    expect(missing).toContain('g2.й.sound-model')
+    expect(missing).not.toContain('w2.в.context-support')
+    expect(missing).not.toContain('w2.support.Бу')
+  })
+
   it('validates qualified bindings without accepting duplicates or empty resources', () => {
     expect(() =>
       assertValidQualifiedBindings([
-        { slotId: 'w2.target-audio', resourceId: 'qualified-w2-audio' },
+        { slotId: 'w2.contextual-target-audio', resourceId: 'qualified-w2-audio' },
       ]),
     ).not.toThrow()
 
     expect(() =>
       assertValidQualifiedBindings([
-        { slotId: 'w2.target-audio', resourceId: 'a' },
-        { slotId: 'w2.target-audio', resourceId: 'b' },
+        { slotId: 'w2.contextual-target-audio', resourceId: 'a' },
+        { slotId: 'w2.contextual-target-audio', resourceId: 'b' },
       ]),
     ).toThrow('Duplicate Module-1 resource slot binding')
 
     expect(() =>
       assertValidQualifiedBindings([
-        { slotId: 'w2.target-audio', resourceId: '   ' },
+        { slotId: 'w2.contextual-target-audio', resourceId: '   ' },
       ]),
     ).toThrow('is empty')
   })

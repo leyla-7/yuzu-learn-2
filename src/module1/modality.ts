@@ -4,12 +4,35 @@ export type EvidenceModality =
   | 'orthographic-retrieval'
   | 'integrated'
 
+export type EvidenceTechnicalState = 'ready' | 'loading' | 'load-failed'
+
+export type ReadingEvidenceRoute =
+  | {
+      route: 'visual-reading'
+      evidenceSemantic: 'reduced-support-visual-reading'
+    }
+  | {
+      route: 'accessible-orthographic-mapping'
+      evidenceSemantic: 'accessible-orthographic-mapping-reintegration'
+    }
+
 export interface EvidenceExposureState {
   modality: EvidenceModality
+  technicalState: EvidenceTechnicalState
   responseCommitted: boolean
   answerBearingPrintVisible: boolean
   answerBearingTargetAudioPlayed: boolean
   completedOrthographicAnswerVisible: boolean
+}
+
+export function assertEvidenceReadyForLearnerResponse(
+  exposure: EvidenceExposureState,
+): void {
+  if (exposure.technicalState !== 'ready') {
+    throw new Error(
+      'Evidence stimulus is not technically ready; do not record a learner response.',
+    )
+  }
 }
 
 export function assertEvidenceExposureSafe(
@@ -44,9 +67,26 @@ export function createProtectedExposure(
 ): EvidenceExposureState {
   return {
     modality,
+    technicalState: 'ready',
     responseCommitted: false,
     answerBearingPrintVisible: false,
     answerBearingTargetAudioPlayed: false,
     completedOrthographicAnswerVisible: false,
+  }
+}
+
+export function resolveReadingEvidenceRoute(input: {
+  assistivePresentationWouldVocalizeFullTarget: boolean
+}): ReadingEvidenceRoute {
+  if (input.assistivePresentationWouldVocalizeFullTarget) {
+    return {
+      route: 'accessible-orthographic-mapping',
+      evidenceSemantic: 'accessible-orthographic-mapping-reintegration',
+    }
+  }
+
+  return {
+    route: 'visual-reading',
+    evidenceSemantic: 'reduced-support-visual-reading',
   }
 }

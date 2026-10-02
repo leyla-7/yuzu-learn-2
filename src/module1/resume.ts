@@ -1,9 +1,11 @@
+import type { OrthographicConstructionState } from './construction'
 import type { LessonSafePointDetail } from '../shell/runtime-contract'
 import type { EvidenceRecord, EvidenceProvenance } from './evidence'
 import type { Module1LessonId } from './lesson-contracts'
 
 export type ResumeBoundary =
   | 'before-first-attempt'
+  | 'active-attempt'
   | 'before-retry'
   | 'after-help'
   | 'after-supported-recovery'
@@ -17,12 +19,21 @@ export interface ResumeExposureGuard {
   completedOrthographicAnswerWouldBeVisible: false
 }
 
+export type ResumeLocalState =
+  | { kind: 'none' }
+  | {
+      kind: 'orthographic-construction'
+      restoration: 'exact' | 'reset-local-preserve-attempt'
+      construction: OrthographicConstructionState
+    }
+
 export interface Module1SafeResumePoint {
   version: 1
   lessonId: Module1LessonId
   checkpointId: string
   boundary: ResumeBoundary
   evidence: EvidenceRecord | null
+  localState: ResumeLocalState
   lessonCompletionEmitted: boolean
   exposure: ResumeExposureGuard
 }
@@ -39,6 +50,14 @@ function assertBoundaryMatchesEvidence(
     )
   }
 
+  if (boundary === 'active-attempt') {
+    if (!evidence?.stimulusExposed || !evidence.activeAttemptId) {
+      throw new Error(
+        'An active-attempt resume point must preserve the exposed stimulus and attempt id.',
+      )
+    }
+  }
+
   if (boundary === 'before-retry') {
     if (
       provenance !== 'first-attempt' &&
@@ -47,6 +66,9 @@ function assertBoundaryMatchesEvidence(
       throw new Error(
         'A before-retry resume point cannot erase Help/recovery provenance.',
       )
+    }
+    if (evidence?.stimulusExposed) {
+      throw new Error('A before-retry resume point cannot contain an active stimulus.')
     }
   }
 
@@ -78,6 +100,7 @@ export function createSafeResumePoint(input: {
   checkpointId: string
   boundary: ResumeBoundary
   evidence?: EvidenceRecord | null
+  localState?: ResumeLocalState
   lessonCompletionEmitted?: boolean
 }): Module1SafeResumePoint {
   if (!input.checkpointId.trim()) {
@@ -106,6 +129,7 @@ export function createSafeResumePoint(input: {
     checkpointId: input.checkpointId,
     boundary: input.boundary,
     evidence,
+    localState: input.localState ?? { kind: 'none' },
     lessonCompletionEmitted,
     exposure: {
       answerBearingPrintWouldBeVisible: false,
@@ -117,6 +141,28 @@ export function createSafeResumePoint(input: {
 
 export function encodeSafeResumePoint(point: Module1SafeResumePoint): string {
   return JSON.stringify(point)
+}
+
+function isValidLocalState(value: unknown): value is ResumeLocalState {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<ResumeLocalState>
+  if (candidate.kind === 'none') return true
+  if (candidate.kind !== 'orthographic-construction') return false
+
+  const constructionCandidate = (
+    candidate as Extract<ResumeLocalState, { kind: 'orthographic-construction' }>
+  ).construction
+  const restoration = (
+    candidate as Extract<ResumeLocalState, { kind: 'orthographic-construction' }>
+  ).restoration
+
+  return (
+    (restoration === 'exact' || restoration === 'reset-local-preserve-attempt') &&
+    !!constructionCandidate &&
+    Array.isArray(constructionCandidate.sequence) &&
+    typeof constructionCandidate.submissionCount === 'number' &&
+    typeof constructionCandidate.fullAnswerExposed === 'boolean'
+  )
 }
 
 export function decodeSafeResumePoint(serialized: string): Module1SafeResumePoint {
@@ -143,7 +189,8 @@ export function decodeSafeResumePoint(serialized: string): Module1SafeResumePoin
     !candidate.exposure ||
     candidate.exposure.answerBearingPrintWouldBeVisible !== false ||
     candidate.exposure.answerBearingTargetAudioWouldAutoplay !== false ||
-    candidate.exposure.completedOrthographicAnswerWouldBeVisible !== false
+    candidate.exposure.completedOrthographicAnswerWouldBeVisible !== false ||
+    !isValidLocalState(candidate.localState)
   ) {
     throw new Error('Module-1 safe resume point failed validation.')
   }
