@@ -128,7 +128,7 @@ await screenshot('course-home-first-visit.png')
 
 await clickByText('Start Course')
 await waitFor("location.hash === '#/lesson/lesson-1'", 'Lesson direct route after Start Course')
-await waitFor("document.querySelector('[data-lesson-id="lesson-1"]') !== null", 'Lesson runtime boundary')
+await waitFor(`document.querySelector('[data-lesson-id="lesson-1"]') !== null`, 'Lesson runtime boundary')
 await assert(
   "JSON.parse(localStorage.getItem('yuzu.shell.v1')).lessons['lesson-1'].status === 'in-progress'",
   'Lesson marked in progress only after shell transition',
@@ -150,13 +150,13 @@ await assert(
 await evaluate('location.reload()')
 await waitFor("document.body.innerText.includes('Continue')", 'returning learner after reload')
 await clickByText('Continue')
-await waitFor("document.querySelector('[data-lesson-id="lesson-1"]') !== null", 'resumed Lesson boundary')
+await waitFor(`document.querySelector('[data-lesson-id="lesson-1"]') !== null`, 'resumed Lesson boundary')
 await assert(
-  "document.querySelector('[data-lesson-id="lesson-1"]').dataset.resumePoint === 'checkpoint-browser-1'",
+  `document.querySelector('[data-lesson-id="lesson-1"]').dataset.resumePoint === 'checkpoint-browser-1'`,
   'valid safe resume point handed back to runtime',
 )
 await assert(
-  "document.querySelector('[data-lesson-id="lesson-1"]').dataset.lessonMode === 'resume'",
+  `document.querySelector('[data-lesson-id="lesson-1"]').dataset.lessonMode === 'resume'`,
   'resume mode',
 )
 
@@ -168,9 +168,9 @@ await waitFor(
   'accessibility preference persistence',
 )
 await clickByText('Return to Lesson')
-await waitFor("document.querySelector('[data-lesson-id="lesson-1"]') !== null", 'Return to Lesson')
+await waitFor(`document.querySelector('[data-lesson-id="lesson-1"]') !== null`, 'Return to Lesson')
 await assert(
-  "document.querySelector('[data-lesson-id="lesson-1"]').dataset.useNonvisualAlternatives === 'true'",
+  `document.querySelector('[data-lesson-id="lesson-1"]').dataset.useNonvisualAlternatives === 'true'`,
   'nonvisual preference reaches Lesson runtime boundary',
 )
 
@@ -191,7 +191,7 @@ await assert(
 )
 
 await navigate(`${APP}/#/lesson/lesson-1`)
-await waitFor("document.querySelector('[data-lesson-id="lesson-1"]') !== null", 'Lesson before completion')
+await waitFor(`document.querySelector('[data-lesson-id="lesson-1"]') !== null`, 'Lesson before completion')
 await evaluate(`window.dispatchEvent(new CustomEvent('yuzu:lesson-complete', { detail: { lessonId: 'lesson-1' } }))`)
 await waitFor("document.body.innerText.includes('Lesson complete')", 'post-Lesson continuation')
 await clickByText('Course Home')
@@ -208,7 +208,7 @@ await evaluate(`(() => {
 })()`)
 await waitFor("document.body.innerText.includes('Revisit')", 'completed Lesson revisit')
 await assert(
-  "document.querySelector('[data-lesson-id="lesson-1"]').dataset.lessonMode === 'revisit'",
+  `document.querySelector('[data-lesson-id="lesson-1"]').dataset.lessonMode === 'revisit'`,
   'revisit runtime mode',
 )
 await evaluate(`window.dispatchEvent(new CustomEvent('yuzu:lesson-safe-point', { detail: { lessonId: 'lesson-1', resumePoint: 'revisit-must-not-regress' } }))`)
