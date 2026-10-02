@@ -174,6 +174,30 @@ await assert(
   'nonvisual preference reaches Lesson runtime boundary',
 )
 
+await evaluate(`(() => {
+  window.__yuzuOriginalSetItem = Storage.prototype.setItem
+  Storage.prototype.setItem = function () { throw new Error('forced-save-failure') }
+})()`)
+await evaluate(`window.dispatchEvent(new CustomEvent('yuzu:lesson-safe-point', { detail: { lessonId: 'lesson-1', resumePoint: 'checkpoint-browser-2' } }))`)
+await waitFor(
+  "document.body.innerText.includes(\"Your latest progress hasn't been saved yet.\")",
+  'save failure recovery state',
+)
+await assert(
+  "document.body.innerText.includes('checkpoint-browser-1')",
+  'save failure names previous safe point',
+)
+await evaluate(`Storage.prototype.setItem = window.__yuzuOriginalSetItem`)
+await clickByText('Try saving again')
+await waitFor(
+  `document.querySelector('[data-lesson-id="lesson-1"]') !== null`,
+  'Lesson restored after save retry',
+)
+await assert(
+  "JSON.parse(localStorage.getItem('yuzu.shell.v1')).lessons['lesson-1'].resumePoint === 'checkpoint-browser-2'",
+  'latest safe point saved after retry',
+)
+
 await evaluate(`window.dispatchEvent(new CustomEvent('yuzu:lesson-load-failed', { detail: { lessonId: 'lesson-1' } }))`)
 await waitFor("document.body.innerText.includes(\"This Lesson couldn't be loaded.\")", 'Lesson load recovery')
 await assert(
@@ -192,8 +216,22 @@ await assert(
 
 await navigate(`${APP}/#/lesson/lesson-1`)
 await waitFor(`document.querySelector('[data-lesson-id="lesson-1"]') !== null`, 'Lesson before completion')
+await evaluate(`(() => {
+  window.__yuzuOriginalSetItem = Storage.prototype.setItem
+  Storage.prototype.setItem = function () { throw new Error('forced-completion-save-failure') }
+})()`)
 await evaluate(`window.dispatchEvent(new CustomEvent('yuzu:lesson-complete', { detail: { lessonId: 'lesson-1' } }))`)
-await waitFor("document.body.innerText.includes('Lesson complete')", 'post-Lesson continuation')
+await waitFor(
+  "document.body.innerText.includes(\"Your Lesson is finished, but we couldn't update your course progress.\")",
+  'completion update failure recovery state',
+)
+await assert(
+  "JSON.parse(localStorage.getItem('yuzu.shell.v1')).lessons['lesson-1'].status === 'in-progress'",
+  'failed completion update does not advance persisted course state',
+)
+await evaluate(`Storage.prototype.setItem = window.__yuzuOriginalSetItem`)
+await clickByText('Try again')
+await waitFor("document.body.innerText.includes('Lesson complete')", 'completion update retry succeeds')
 await clickByText('Course Home')
 await waitFor("location.hash === '#/' && document.body.innerText.includes('Completed')", 'completed Lesson on Course Home')
 await assert(
@@ -218,6 +256,25 @@ await assert(
   'revisit does not regress canonical completion',
 )
 await screenshot('completed-lesson-revisit.png')
+
+await navigate(`${APP}/#/`)
+await waitFor("document.body.innerText.includes('Ukrainian A1')", 'Course Home before load-recovery proof')
+await evaluate(`(() => {
+  sessionStorage.setItem('yuzu.evidence.saved-shell', localStorage.getItem('yuzu.shell.v1'))
+  localStorage.setItem('yuzu.shell.v1', '{broken')
+  location.reload()
+})()`)
+await waitFor(
+  "document.body.innerText.includes(\"We couldn't load your course.\")",
+  'corrupt persisted state fails closed',
+)
+await evaluate(`localStorage.setItem('yuzu.shell.v1', sessionStorage.getItem('yuzu.evidence.saved-shell'))`)
+await clickByText('Try again')
+await waitFor("document.body.innerText.includes('Ukrainian A1')", 'course-state load retry succeeds')
+await assert(
+  "document.body.innerText.includes('Completed')",
+  'load retry restores prior canonical progress',
+)
 
 await call('Emulation.setDeviceMetricsOverride', {
   width: 390,
@@ -247,7 +304,11 @@ const evidence = {
   nonvisualPreferencePersistence: true,
   lessonLoadFailureDoesNotAdvance: true,
   invalidRouteRecovery: true,
+  saveFailureRecovery: true,
+  lessonLoadFailureRecovery: true,
   completionEventConsumption: true,
+  completionUpdateFailureRecovery: true,
+  loadStateFailureRetry: true,
   completedLessonRevisitWithoutRegression: true,
   responsiveMobileNoHorizontalScroll: true,
 }
