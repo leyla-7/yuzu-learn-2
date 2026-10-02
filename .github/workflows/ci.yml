@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - work-yuzu-054-technical-foundation
+      - work-yuzu-074-app-shell
   pull_request:
     branches:
       - main
@@ -18,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7.0.0
@@ -29,3 +32,45 @@ jobs:
 
       - name: Verify foundation
         run: npm run check
+
+      - name: Capture WORK-YUZU-074 browser evidence
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME_BIN" ]; then
+            echo "No Chrome/Chromium binary found on runner" >&2
+            exit 1
+          fi
+
+          mkdir -p browser-evidence
+          python3 -m http.server 4173 -d dist >/tmp/yuzu-shell-http.log 2>&1 &
+          HTTP_PID=$!
+          "$CHROME_BIN"             --headless=new             --no-sandbox             --disable-dev-shm-usage             --remote-debugging-port=9222             --user-data-dir=/tmp/yuzu-shell-chrome             about:blank >/tmp/yuzu-shell-chrome.log 2>&1 &
+          CHROME_PID=$!
+
+          cleanup() {
+            kill "$HTTP_PID" "$CHROME_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          if ! node scripts/shell-browser-evidence.mjs; then
+            echo "--- Chrome log ---"
+            cat /tmp/yuzu-shell-chrome.log || true
+            echo "--- HTTP server log ---"
+            cat /tmp/yuzu-shell-http.log || true
+            exit 1
+          fi
+
+      - name: Upload shell build
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: work-yuzu-074-shell-build
+          path: dist
+          retention-days: 7
+
+      - name: Upload shell browser evidence
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: work-yuzu-074-browser-evidence
+          path: browser-evidence
+          retention-days: 7
