@@ -1,8 +1,6 @@
+import { ShellApp } from './shell/ShellApp'
+import { UKRAINIAN_A1_SHELL_SLICE } from './shell/model'
+
 export function App() {
-  return (
-    <main className="app-shell">
-      <h1>Yuzu Learn 2.0</h1>
-      <p>Technical foundation</p>
-    </main>
-  )
+  return <ShellApp course={UKRAINIAN_A1_SHELL_SLICE} />
 }
