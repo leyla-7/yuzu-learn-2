@@ -53,6 +53,7 @@ describe('Module-1 safe resume contract', () => {
   it('preserves Help provenance instead of silently restoring an independent attempt', () => {
     const first = recordResponse(
       exposeEvidenceStimulus(createEvidenceRecord(), 'attempt-1'),
+      'incorrect',
     )
     const helped = recordHelp(first, 'mapping-specific')
     const point = createSafeResumePoint({
@@ -71,6 +72,7 @@ describe('Module-1 safe resume contract', () => {
   it('preserves answer-bearing recovery provenance across resume', () => {
     const first = recordResponse(
       exposeEvidenceStimulus(createEvidenceRecord(), 'attempt-1'),
+      'incorrect',
     )
     const recovered = recordAnswerBearingRecovery(first)
     const point = createSafeResumePoint({
@@ -140,6 +142,7 @@ describe('Module-1 safe resume contract', () => {
   it('rejects resume points that would erase Help/recovery state', () => {
     const first = recordResponse(
       exposeEvidenceStimulus(createEvidenceRecord(), 'attempt-1'),
+      'incorrect',
     )
     const helped = recordHelp(first)
 

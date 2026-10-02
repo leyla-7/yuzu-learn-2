@@ -19,14 +19,29 @@ export type HelpSupportLevel =
   | 'supported-review'
   | 'full-answer'
 
+export type EvidenceResponseOutcome = 'correct' | 'incorrect'
+
+export interface EvidenceResponse {
+  attemptId: string
+  outcome: EvidenceResponseOutcome
+  provenance: Exclude<EvidenceProvenance, 'not-attempted' | 'completed'>
+}
+
+export interface HelpEvent {
+  level: HelpSupportLevel
+  contentId: string | null
+}
+
 export interface EvidenceRecord {
   provenance: EvidenceProvenance
   attemptCount: number
   activeAttemptId: string | null
   stimulusExposed: boolean
   replayCount: number
+  responses: readonly EvidenceResponse[]
   helpUsed: boolean
   helpLevel: HelpSupportLevel | null
+  helpEvents: readonly HelpEvent[]
   supportedRecoveryUsed: boolean
   answerBearingRecoveryUsed: boolean
   completedFrom: EvidenceCompletionSource | null
@@ -39,8 +54,10 @@ export function createEvidenceRecord(): EvidenceRecord {
     activeAttemptId: null,
     stimulusExposed: false,
     replayCount: 0,
+    responses: [],
     helpUsed: false,
     helpLevel: null,
+    helpEvents: [],
     supportedRecoveryUsed: false,
     answerBearingRecoveryUsed: false,
     completedFrom: null,
@@ -76,18 +93,31 @@ export function exposeEvidenceStimulus(
     attemptCount: record.attemptCount + 1,
     activeAttemptId: attemptId,
     stimulusExposed: true,
-    replayCount: 0,
   }
 }
 
-export function recordResponse(record: EvidenceRecord): EvidenceRecord {
+export function recordResponse(
+  record: EvidenceRecord,
+  outcome: EvidenceResponseOutcome,
+): EvidenceRecord {
   if (!record.stimulusExposed || !record.activeAttemptId) {
     throw new Error('A learner response requires an active evidence stimulus.')
+  }
+  if (record.provenance === 'not-attempted' || record.provenance === 'completed') {
+    throw new Error('A learner response requires active attempt provenance.')
   }
 
   return {
     ...record,
     stimulusExposed: false,
+    responses: [
+      ...record.responses,
+      {
+        attemptId: record.activeAttemptId,
+        outcome,
+        provenance: record.provenance,
+      },
+    ],
   }
 }
 
@@ -102,9 +132,18 @@ export function recordReplay(record: EvidenceRecord): EvidenceRecord {
   }
 }
 
+function appendHelpEvent(
+  record: EvidenceRecord,
+  level: HelpSupportLevel,
+  contentId: string | null,
+): readonly HelpEvent[] {
+  return [...record.helpEvents, { level, contentId }]
+}
+
 export function recordHelp(
   record: EvidenceRecord,
   level: HelpSupportLevel = 'task-orientation',
+  contentId: string | null = null,
 ): EvidenceRecord {
   if (record.provenance === 'completed') {
     throw new Error('Completed evidence cannot enter Help.')
@@ -115,10 +154,14 @@ export function recordHelp(
     provenance: 'help-used',
     helpUsed: true,
     helpLevel: level,
+    helpEvents: appendHelpEvent(record, level, contentId),
   }
 }
 
-export function recordSupportedRecovery(record: EvidenceRecord): EvidenceRecord {
+export function recordSupportedRecovery(
+  record: EvidenceRecord,
+  contentId: string | null = null,
+): EvidenceRecord {
   if (record.provenance === 'completed') {
     throw new Error('Completed evidence cannot enter supported recovery.')
   }
@@ -126,14 +169,17 @@ export function recordSupportedRecovery(record: EvidenceRecord): EvidenceRecord 
   return {
     ...record,
     provenance: 'supported-recovery',
+    stimulusExposed: false,
     helpUsed: true,
     helpLevel: 'supported-review',
+    helpEvents: appendHelpEvent(record, 'supported-review', contentId),
     supportedRecoveryUsed: true,
   }
 }
 
 export function recordAnswerBearingRecovery(
   record: EvidenceRecord,
+  contentId: string | null = null,
 ): EvidenceRecord {
   if (record.provenance === 'completed') {
     throw new Error('Completed evidence cannot enter answer-bearing recovery.')
@@ -142,8 +188,10 @@ export function recordAnswerBearingRecovery(
   return {
     ...record,
     provenance: 'answer-bearing-recovery',
+    stimulusExposed: false,
     helpUsed: true,
     helpLevel: 'full-answer',
+    helpEvents: appendHelpEvent(record, 'full-answer', contentId),
     supportedRecoveryUsed: true,
     answerBearingRecoveryUsed: true,
   }
