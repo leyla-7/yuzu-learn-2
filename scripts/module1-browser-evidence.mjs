@@ -192,6 +192,11 @@ async function clickAudio(role) {
     `${role} real playback`,
     260,
   )
+  await waitFor(
+    `localStorage.getItem(${JSON.stringify(STORAGE_KEY)})?.includes(${JSON.stringify(role)}) === true`,
+    `${role} playback persisted into safe resume state`,
+    120,
+  )
 }
 
 async function keyActivate(selector) {
