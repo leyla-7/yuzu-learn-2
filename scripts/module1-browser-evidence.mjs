@@ -284,11 +284,16 @@ await assert(
 await screenshot('02-l2-s01-reintegration.png')
 await clickText('и', '.grapheme-button')
 await waitFor(
+  `document.querySelector('[data-module1-state="l2-s01"][data-module1-item="2"]') !== null`,
+  'L2-S01 second vowel renewal',
+)
+await clickText('і', '.grapheme-button')
+await waitFor(
   `document.querySelector('[data-module1-state="l2-s02"]') !== null`,
-  'L2-S02 after W1 renewal',
+  'L2-S02 after both W1 renewals',
 )
 
-// W2 teaching seam: exact symbolic role, no source invented; Continue reaches non-audio work.
+// W2 teaching seam: exact symbolic role, no source invented; the audio-dependent state remains honestly gated.
 await assert(
   `document.querySelector('[data-audio-role="w2-contextual"]')?.dataset.audioSeam === 'AUD-M1-L2-W2-CONTEXT-BUVAI'`,
   'W2 contextual seam exact',
@@ -297,12 +302,14 @@ await assert(
   `document.querySelector('[data-audio-role="w2-contextual"] audio') === null`,
   'W2 contextual seam has no audio element/source',
 )
-evidence.w2SeamsNoInventedSource = true
-await clickText('Continue')
-await waitFor(
-  `document.querySelector('[data-module1-state="l2-s03"]') !== null`,
-  'L2-S03 function practice',
+await assert(
+  "[...document.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Continue')?.disabled === true",
+  'W2 teaching does not silently bypass the deferred contextual audio seam',
 )
+evidence.w2SeamsNoInventedSource = true
+
+// Unrelated later states remain independently implemented and verifiable despite that seam.
+await seed('lesson-2', 'l2-s03')
 await keyActivate('.target-choice:last-child')
 await waitFor(
   `document.querySelector('[data-module1-item="1"]') !== null`,
@@ -347,6 +354,11 @@ await assert(
 await assert(
   `document.querySelector('[data-audio-role="w2-neutral"] audio') === null`,
   'L2 W2 construction preserves symbolic audio seam',
+)
+await assert(
+  `document.querySelector('[data-construction-contract="l2-w2-supported"]')?.dataset.inputReady === 'false' &&
+   [...document.querySelectorAll('.construction-pool .grapheme-button')].every((button) => button.disabled)`,
+  'audio-cued construction cannot record an attempt before W2 audio activation',
 )
 evidence.l2SupportedConstruction = true
 await screenshot('04-l2-supported-construction.png')
@@ -448,6 +460,17 @@ await assert(
 )
 evidence.l3ReducedConstructionAndResume = true
 await screenshot('07-l3-reduced-construction.png')
+
+// The two-audio integrated comparison stays non-answer-bearing while one role is deferred.
+await seed('lesson-3', 'l3-s05')
+await assert(
+  "[...document.querySelectorAll('.audio-choice-card .secondary-button')].every((button) => button.disabled)",
+  'two-audio comparison cannot use W1 availability to reveal the deferred W2 answer',
+)
+await assert(
+  "!document.body.innerText.includes('Привіт') && !document.body.innerText.includes('Бувай')",
+  'integrated audio choice exposes no target print before response',
+)
 
 // L4 lowest-support construction exists with the same protection and broader pool.
 await seed('lesson-4', 'l4-s03')
