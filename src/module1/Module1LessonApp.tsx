@@ -313,7 +313,7 @@ function Module1LessonRuntime({
               correct,
               retryText: 'Try again. Look at when the interaction begins.',
               suffix: 'w1-listen',
-              onCorrect: (next) => next,
+              onCorrect: (next) => setBrowserItem(next, 1),
             })
           }
           onHelp={() =>
@@ -324,18 +324,27 @@ function Module1LessonRuntime({
               W1,
             )
           }
-          onRenewal={(correct) => {
-            if (!correct) {
+          onRenewal={(choice) => {
+            const expected = session.itemIndex === 1 ? 'и' : 'і'
+            if (choice !== expected) {
               commit(
                 setBrowserFeedback(session, {
-                  key: 'l2-s01-renewal',
+                  key: `l2-s01-renewal-${session.itemIndex}`,
                   kind: 'retry',
                   text: 'Try again.',
                 }),
               )
               return
             }
-            commit(advanceState(withCapabilities(session, ['w1-changed-context-retrieval'])))
+            if (session.itemIndex === 1) {
+              commit(setBrowserItem(session, 2))
+              return
+            }
+            commit(
+              advanceState(
+                withCapabilities(session, ['w1-changed-context-retrieval']),
+              ),
+            )
           }}
         />
       )
@@ -349,6 +358,7 @@ function Module1LessonRuntime({
           audioRole="w2-contextual"
           prompt="Watch and listen."
           support="Notice when the word appears: the time together is ending."
+          canContinue={session.playedAudioRoles.includes('w2-contextual')}
           onAudio={() => recordAudioPlay('w2-contextual')}
           onContinue={() =>
             commit(advanceState(withCapabilities(session, ['w2-integrated-encounter'])))
@@ -362,6 +372,7 @@ function Module1LessonRuntime({
           stateId="l2-s03"
           session={session}
           contexts={[MODULE1_CONTEXTS.courtyard, MODULE1_CONTEXTS.park]}
+          feedback={feedback}
           onRespond={(correct) =>
             respond({
               correct,
@@ -405,6 +416,15 @@ function Module1LessonRuntime({
               )
             }
           }}
+          onIncorrect={() =>
+            commit(
+              setBrowserFeedback(session, {
+                key: evidenceKey(session, 'mapping'),
+                kind: 'retry',
+                text: 'Replay the sound and try again.',
+              }),
+            )
+          }
           onHelp={() =>
             applyHelp(
               'Replay the sound and try again.',
@@ -442,6 +462,8 @@ function Module1LessonRuntime({
           session={session}
           target={W2}
           context={MODULE1_CONTEXTS.park}
+          phases={['opening', 'closing']}
+          feedback={feedback}
           onRespond={(correct) =>
             respond({
               correct,
@@ -473,6 +495,7 @@ function Module1LessonRuntime({
             />
           }
           prompt="Listen. Build the word you hear."
+          inputReady={session.playedAudioRoles.includes('w2-neutral')}
           feedback={feedback}
           onCommit={commit}
           onComplete={(next) =>
@@ -531,6 +554,7 @@ function Module1LessonRuntime({
           stateId="l3-s01"
           session={session}
           contexts={[MODULE1_CONTEXTS.basketball, MODULE1_CONTEXTS.bicycle]}
+          feedback={feedback}
           onRespond={(correct) =>
             respond({
               correct,
@@ -630,6 +654,7 @@ function Module1LessonRuntime({
               ? MODULE1_CONTEXTS.bicycle
               : MODULE1_CONTEXTS.basketball
           }
+          feedback={feedback}
           onRespond={(correct) =>
             respond({
               correct,
@@ -840,6 +865,7 @@ function Module1LessonRuntime({
               ? MODULE1_CONTEXTS.garden
               : MODULE1_CONTEXTS.market
           }
+          feedback={feedback}
           onRespond={(correct) =>
             respond({
               correct,
@@ -1024,13 +1050,18 @@ function ContextChoice({
 function MomentChoices({
   context,
   onChoose,
+  phases,
 }: {
   context: ContextSet
   onChoose: (moment: ContextMoment) => void
+  phases?: readonly ContextMoment['phase'][]
 }) {
+  const moments = phases
+    ? context.moments.filter((moment) => phases.includes(moment.phase))
+    : context.moments
   return (
     <div className="moment-choice-grid" role="group" aria-label="Choose a moment">
-      {context.moments.map((moment) => (
+      {moments.map((moment) => (
         <ContextChoice
           key={moment.id}
           moment={moment}
@@ -1198,12 +1229,35 @@ function L2S01({
   onAudio: () => void
   onRespond: (correct: boolean) => void
   onHelp: () => void
-  onRenewal: (correct: boolean) => void
+  onRenewal: (choice: 'и' | 'і') => void
 }) {
-  const record = session.evidenceByKey[evidenceKey(session, 'w1-listen')]
-  const answeredCorrectly =
-    record?.responses.some((response) => response.outcome === 'correct') ?? false
   const audioPlayed = session.playedAudioRoles.includes('w1-neutral')
+
+  if (session.itemIndex > 0) {
+    const renewal = session.itemIndex === 1 ? 'и' : 'і'
+    const position = renewal === 'и' ? 2 : 4
+    return (
+      <section className="reintegration-card" aria-label="Word reintegration">
+        <p className="target-word in-word-target" lang="uk" aria-label={W1}>
+          {[...W1].map((char, index) => (
+            <span
+              key={`${char}-${index}`}
+              className={index === position ? 'mapping-active' : undefined}
+            >
+              {char}
+            </span>
+          ))}
+        </p>
+        <p>Yes.</p>
+        <p>Choose the matching letter.</p>
+        <div className="vowel-renewal">
+          <button type="button" className="grapheme-button" lang="uk" onClick={() => onRenewal('и')}>и</button>
+          <button type="button" className="grapheme-button" lang="uk" onClick={() => onRenewal('і')}>і</button>
+        </div>
+        {feedback}
+      </section>
+    )
+  }
 
   return (
     <>
@@ -1225,17 +1279,6 @@ function L2S01({
       ) : null}
       <LocalHelp onHelp={onHelp} />
       {feedback}
-      {answeredCorrectly ? (
-        <section className="reintegration-card" aria-label="Word reintegration">
-          <p className="target-word" lang="uk">{W1}</p>
-          <p>Yes.</p>
-          <p>Choose the matching letter.</p>
-          <div className="vowel-renewal">
-            <button type="button" className="grapheme-button" lang="uk" onClick={() => onRenewal(true)}>и</button>
-            <button type="button" className="grapheme-button" lang="uk" onClick={() => onRenewal(false)}>і</button>
-          </div>
-        </section>
-      ) : null}
     </>
   )
 }
@@ -1247,6 +1290,7 @@ function TeachingEncounter({
   audioRole,
   prompt,
   support,
+  canContinue,
   onAudio,
   onContinue,
 }: {
@@ -1256,6 +1300,7 @@ function TeachingEncounter({
   audioRole: AudioRole
   prompt: string
   support: string
+  canContinue: boolean
   onAudio: () => void
   onContinue: () => void
 }) {
@@ -1266,7 +1311,12 @@ function TeachingEncounter({
       <p className="helper-text">{prompt}</p>
       <AudioGate role={audioRole} onPlayed={onAudio} />
       <p className="support-line">{support}</p>
-      <button className="button primary-button" type="button" onClick={onContinue}>
+      <button
+        className="button primary-button"
+        type="button"
+        disabled={!canContinue}
+        onClick={onContinue}
+      >
         Continue
       </button>
     </section>
@@ -1277,12 +1327,14 @@ function FunctionPractice({
   stateId,
   session,
   contexts,
+  feedback,
   onRespond,
   onHelp,
 }: {
   stateId: LessonStateId
   session: BrowserLessonSession
   contexts: readonly [ContextSet, ContextSet]
+  feedback: ReactNode
   onRespond: (correct: boolean) => void
   onHelp: () => void
 }) {
@@ -1296,6 +1348,7 @@ function FunctionPractice({
         onChoose={onRespond}
       />
       <LocalHelp onHelp={onHelp} />
+      {feedback}
     </section>
   )
 }
@@ -1305,12 +1358,14 @@ function MappingSequence({
   feedback,
   onAudio,
   onCorrect,
+  onIncorrect,
   onHelp,
 }: {
   session: BrowserLessonSession
   feedback: ReactNode
   onAudio: (role: AudioRole) => void
   onCorrect: () => void
+  onIncorrect: () => void
   onHelp: () => void
 }) {
   const grapheme = W2_MAPPING_ORDER[session.itemIndex] ?? 'Б'
@@ -1367,6 +1422,7 @@ function MappingSequence({
             disabled={!audioPlayed}
             onClick={() => {
               if (option === grapheme) onCorrect()
+              else onIncorrect()
             }}
           >
             {option}
@@ -1387,6 +1443,8 @@ function ReadingMomentActivity({
   session,
   target,
   context,
+  phases,
+  feedback,
   onRespond,
   onHelp,
 }: {
@@ -1394,6 +1452,8 @@ function ReadingMomentActivity({
   session: BrowserLessonSession
   target: string
   context: ContextSet
+  phases?: readonly ContextMoment['phase'][]
+  feedback: ReactNode
   onRespond: (correct: boolean) => void
   onHelp: () => void
 }) {
@@ -1403,9 +1463,11 @@ function ReadingMomentActivity({
       <p className="target-word" lang="uk">{target}</p>
       <MomentChoices
         context={context}
+        phases={phases}
         onChoose={(moment) => onRespond(moment.phase === expectedPhase)}
       />
       <LocalHelp onHelp={onHelp} />
+      {feedback}
     </section>
   )
 }
@@ -1462,6 +1524,7 @@ function ConstructionActivity({
   contractId,
   cue,
   prompt,
+  inputReady = true,
   feedback,
   onCommit,
   onComplete,
@@ -1473,6 +1536,7 @@ function ConstructionActivity({
   contractId: ConstructionContractId
   cue: ReactNode
   prompt: string
+  inputReady?: boolean
   feedback: ReactNode
   onCommit: (session: BrowserLessonSession) => void
   onComplete: (session: BrowserLessonSession) => void
@@ -1586,6 +1650,7 @@ function ConstructionActivity({
       data-construction-contract={contract.id}
       data-target-length-support={String(contract.targetLengthSupport)}
       data-per-placement-correctness="false"
+      data-input-ready={String(inputReady)}
     >
       <div className="construction-cue">{cue}</div>
       <p>{prompt}</p>
@@ -1623,7 +1688,7 @@ function ConstructionActivity({
               className="grapheme-button"
               type="button"
               lang="uk"
-              disabled={used}
+              disabled={used || !inputReady}
               onClick={() => add(grapheme)}
             >
               {grapheme}
@@ -1643,7 +1708,7 @@ function ConstructionActivity({
         <button
           className="button primary-button"
           type="button"
-          disabled={!canCheck}
+          disabled={!inputReady || !canCheck}
           onClick={check}
         >
           Check
