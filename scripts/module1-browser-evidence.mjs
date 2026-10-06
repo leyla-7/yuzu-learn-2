@@ -280,37 +280,37 @@ evidence.focusKeyboard = true
 await screenshot('02-l2-s01-reintegration.png')
 await clickText('и', '.grapheme-button')
 await waitFor(
-  "document.querySelector('[data-module1-state="l2-s02"]') !== null",
+  `document.querySelector('[data-module1-state="l2-s02"]') !== null`,
   'L2-S02 after W1 renewal',
 )
 
 // W2 teaching seam: exact symbolic role, no source invented; Continue reaches non-audio work.
 await assert(
-  "document.querySelector('[data-audio-role="w2-contextual"]')?.dataset.audioSeam === 'AUD-M1-L2-W2-CONTEXT-BUVAI'",
+  `document.querySelector('[data-audio-role="w2-contextual"]')?.dataset.audioSeam === 'AUD-M1-L2-W2-CONTEXT-BUVAI'`,
   'W2 contextual seam exact',
 )
 await assert(
-  "document.querySelector('[data-audio-role="w2-contextual"] audio') === null",
+  `document.querySelector('[data-audio-role="w2-contextual"] audio') === null`,
   'W2 contextual seam has no audio element/source',
 )
 evidence.w2SeamsNoInventedSource = true
 await clickText('Continue')
 await waitFor(
-  "document.querySelector('[data-module1-state="l2-s03"]') !== null",
+  `document.querySelector('[data-module1-state="l2-s03"]') !== null`,
   'L2-S03 function practice',
 )
 await clickText('Привіт')
 await waitFor(
-  "document.querySelector('[data-module1-item="1"]') !== null",
+  `document.querySelector('[data-module1-item="1"]') !== null`,
   'L2-S03 second item',
 )
 await clickText('Бувай')
 await waitFor(
-  "document.querySelector('[data-module1-state="l2-s04"]') !== null",
+  `document.querySelector('[data-module1-state="l2-s04"]') !== null`,
   'L2-S04 mapping',
 )
 await assert(
-  "document.querySelector('[data-audio-seam="MAP-Б"] audio') === null",
+  `document.querySelector('[data-audio-seam="MAP-Б"] audio') === null`,
   'MAP-Б symbolic and unbound',
 )
 await assert(
@@ -323,12 +323,12 @@ await screenshot('03-l2-s04-symbolic-mapping.png')
 // L2 reading exists after the blocked mapping seam and is independently executable.
 await seed('lesson-2', 'l2-s05')
 await assert(
-  "document.body.innerText.includes('Бувай') && document.querySelector('[data-audio-role="w2-neutral"]') === null",
+  `document.body.innerText.includes('Бувай') && document.querySelector('[data-audio-role="w2-neutral"]') === null`,
   'L2 read state has print and no target autoplay',
 )
 await clickSelector('[data-moment-id="park-closing"]')
 await waitFor(
-  "document.querySelector('[data-module1-state="l2-s06"]') !== null",
+  `document.querySelector('[data-module1-state="l2-s06"]') !== null`,
   'L2-S06 supported construction',
 )
 await assert(
@@ -340,7 +340,7 @@ await assert(
   'L2 supported construction exact pool',
 )
 await assert(
-  "document.querySelector('[data-audio-role="w2-neutral"] audio') === null",
+  `document.querySelector('[data-audio-role="w2-neutral"] audio') === null`,
   'L2 W2 construction preserves symbolic audio seam',
 )
 evidence.l2SupportedConstruction = true
@@ -355,7 +355,7 @@ await assert(
 await clickAudio('w1-neutral')
 await clickSelector('[data-moment-id="basketball-opening"]')
 await waitFor(
-  "document.querySelector('[data-module1-item="1"]') !== null",
+  `document.querySelector('[data-module1-item="1"]') !== null`,
   'L3 listening W2 item',
 )
 await assert(
@@ -393,7 +393,7 @@ evidence.l3ProtectedReading = true
 
 await seed('lesson-3', 'l3-s03', { nonvisual: true })
 await assert(
-  "document.querySelector('[data-target-length-support="false"]') !== null",
+  `document.querySelector('[data-target-length-support="false"]') !== null`,
   'nonvisual route replaces print-led reading with reduced construction',
 )
 await assert(
@@ -418,7 +418,7 @@ await waitFor(
 )
 await evaluate('location.reload()')
 await waitFor(
-  "document.querySelector('[data-module1-state="l3-s04"]') !== null",
+  `document.querySelector('[data-module1-state="l3-s04"]') !== null`,
   'L3 safe resume after reload',
 )
 await assert(
@@ -434,11 +434,11 @@ for (const grapheme of ['и', 'в', 'і', 'т']) {
 }
 await clickText('Check')
 await waitFor(
-  "document.querySelector('[data-module1-item="1"]') !== null",
+  `document.querySelector('[data-module1-item="1"]') !== null`,
   'L3 W1 construction completes into W2 item',
 )
 await assert(
-  "document.querySelector('[data-audio-role="w2-neutral"] audio') === null",
+  `document.querySelector('[data-audio-role="w2-neutral"] audio') === null`,
   'L3 W2 construction exact symbolic seam',
 )
 evidence.l3ReducedConstructionAndResume = true
@@ -447,7 +447,7 @@ await screenshot('07-l3-reduced-construction.png')
 // L4 lowest-support construction exists with the same protection and broader pool.
 await seed('lesson-4', 'l4-s03')
 await assert(
-  "document.querySelector('[data-target-length-support="false"]') !== null && document.querySelectorAll('.construction-slot').length === 0",
+  `document.querySelector('[data-target-length-support="false"]') !== null && document.querySelectorAll('.construction-slot').length === 0`,
   'L4 lowest-support construction has no length slots',
 )
 await assert(
@@ -459,7 +459,7 @@ evidence.l4ReducedConstruction = true
 // Media slots are structurally exact and never substituted with invented image URLs.
 await seed('lesson-4', 'l4-s04')
 await assert(
-  "document.querySelector('[data-media-slot="MEDIA-M1-L4-FOOD-TRUCK-OPENING"]')?.dataset.mediaStatus === 'external-slot'",
+  `document.querySelector('[data-media-slot="MEDIA-M1-L4-FOOD-TRUCK-OPENING"]')?.dataset.mediaStatus === 'external-slot'`,
   'final integration preserves exact external media slot',
 )
 await assert(
