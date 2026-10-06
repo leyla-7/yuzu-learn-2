@@ -46,6 +46,7 @@ import {
 } from './browser-spec'
 import {
   advanceBrowserState,
+  continueBrowserNavigation,
   decodeBrowserLessonSession,
   encodeBrowserLessonSession,
   recordBrowserAudioPlayed,
@@ -54,6 +55,7 @@ import {
   setBrowserFeedback,
   setBrowserHelpDepth,
   setBrowserItem,
+  stageBrowserNavigation,
   type BrowserLessonSession,
 } from './browser-session'
 import {
@@ -233,6 +235,7 @@ function Module1LessonRuntime({
     suffix?: string
     onCorrect: (session: BrowserLessonSession) => BrowserLessonSession
   }) => {
+    if (session.pendingNavigation) return
     const suffix = input.suffix ?? 'main'
     const key = evidenceKey(session, suffix)
     const active = ensureActiveEvidence(session.evidenceByKey[key], key)
@@ -253,12 +256,12 @@ function Module1LessonRuntime({
     }
 
     let next = setBrowserEvidence(session, key, completeEvidence(responded))
-    next = setBrowserFeedback(next, {
+    const target = input.onCorrect(next)
+    next = stageBrowserNavigation(session, target, {
       key,
       kind: 'success',
       text: input.successText ?? 'Yes.',
     })
-    next = input.onCorrect(next)
     commit(next)
   }
 
@@ -288,7 +291,15 @@ function Module1LessonRuntime({
       data-feedback-key={session.feedback.key}
     >
       <strong>{session.feedback.text}</strong>
-      {session.feedback.kind !== 'success' ? (
+      {session.feedback.kind === 'success' && session.pendingNavigation ? (
+        <button
+          className="button primary-button"
+          type="button"
+          onClick={() => commit(continueBrowserNavigation(session))}
+        >
+          Continue
+        </button>
+      ) : session.feedback.kind !== 'success' ? (
         <button
           className="button secondary-button"
           type="button"
