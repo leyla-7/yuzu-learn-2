@@ -446,9 +446,7 @@ function Module1LessonRuntime({
           feedback={feedback}
           onCommit={commit}
           onComplete={(next) =>
-            commit(
-              advanceState(withCapabilities(next, ['w2-guided-decoding'])),
-            )
+            advanceState(withCapabilities(next, ['w2-guided-decoding']))
           }
           helpCopy="Read from the left. Use the sounds when you need them."
         />
@@ -495,10 +493,8 @@ function Module1LessonRuntime({
           feedback={feedback}
           onCommit={commit}
           onComplete={(next) =>
-            commit(
-              advanceState(
-                withCapabilities(next, ['supported-orthographic-construction']),
-              ),
+            advanceState(
+              withCapabilities(next, ['supported-orthographic-construction']),
             )
           }
           helpCopy="Keep what you have. Check only the part that stopped you."
@@ -627,17 +623,13 @@ function Module1LessonRuntime({
           prompt="Build the word that belongs here."
           feedback={feedback}
           onCommit={commit}
-          onComplete={(next) => {
-            if (session.itemIndex === 0) {
-              commit(setBrowserItem(next, 1))
-            } else {
-              commit(
-                advanceState(
+          onComplete={(next) =>
+            session.itemIndex === 0
+              ? setBrowserItem(next, 1)
+              : advanceState(
                   withCapabilities(next, ['reading-without-auto-target-audio']),
-                ),
-              )
-            }
-          }}
+                )
+          }
           helpCopy="Read from the left. Open sound Help only if you need it."
         />
       ) : (
@@ -700,20 +692,16 @@ function Module1LessonRuntime({
           }
           feedback={feedback}
           onCommit={commit}
-          onComplete={(next) => {
-            if (session.itemIndex === 0) {
-              commit(setBrowserItem(next, 1))
-            } else {
-              commit(
-                advanceState(
+          onComplete={(next) =>
+            session.itemIndex === 0
+              ? setBrowserItem(next, 1)
+              : advanceState(
                   withCapabilities(next, [
                     'embedded-k2-renewal',
                     'reduced-support-orthographic-retrieval',
                   ]),
-                ),
-              )
-            }
-          }}
+                )
+          }
           helpCopy="Keep what is correct. Recheck the part that stopped you."
           supportedHelpCopy="Replay this sound, then return to the word."
           answerHelpCopy="Use Help for the difficult part, then make a fresh attempt."
@@ -842,17 +830,13 @@ function Module1LessonRuntime({
           prompt="Build the word that belongs here."
           feedback={feedback}
           onCommit={commit}
-          onComplete={(next) => {
-            if (session.itemIndex === 0) {
-              commit(setBrowserItem(next, 1))
-            } else {
-              commit(
-                advanceState(
+          onComplete={(next) =>
+            session.itemIndex === 0
+              ? setBrowserItem(next, 1)
+              : advanceState(
                   withCapabilities(next, ['reduced-support-reading-function']),
-                ),
-              )
-            }
-          }}
+                )
+          }
           helpCopy="Open one sound only if you need it, then make a fresh attempt."
         />
       ) : (
@@ -915,19 +899,15 @@ function Module1LessonRuntime({
           }
           feedback={feedback}
           onCommit={commit}
-          onComplete={(next) => {
-            if (session.itemIndex === 0) {
-              commit(setBrowserItem(next, 1))
-            } else {
-              commit(
-                advanceState(
+          onComplete={(next) =>
+            session.itemIndex === 0
+              ? setBrowserItem(next, 1)
+              : advanceState(
                   withCapabilities(next, [
                     'module-low-support-orthographic-retrieval',
                   ]),
-                ),
-              )
-            }
-          }}
+                )
+          }
           helpCopy="Recheck the part that stopped you."
           supportedHelpCopy="Replay one sound, then continue."
         />
@@ -1532,7 +1512,7 @@ function ConstructionActivity({
   inputReady?: boolean
   feedback: ReactNode
   onCommit: (session: BrowserLessonSession) => void
-  onComplete: (session: BrowserLessonSession) => void
+  onComplete: (session: BrowserLessonSession) => BrowserLessonSession
   helpCopy: string
   supportedHelpCopy?: string
   answerHelpCopy?: string
@@ -1591,12 +1571,13 @@ function ConstructionActivity({
     }
 
     next = setBrowserEvidence(next, key, completeEvidence(responded))
-    next = setBrowserFeedback(next, {
+    const target = onComplete(next)
+    next = stageBrowserNavigation(session, target, {
       key,
       kind: 'success',
       text: 'Yes.',
     })
-    onComplete(next)
+    onCommit(next)
   }
 
   const help = () => {
