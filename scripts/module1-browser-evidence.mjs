@@ -252,7 +252,7 @@ await call('Emulation.setDeviceMetricsOverride', {
 
 // Shell integration / prerequisite path.
 await evaluate(`localStorage.removeItem(${JSON.stringify(STORAGE_KEY)}); location.hash = '#/'; location.reload()`)
-await waitFor("document.body.innerText.includes('Start Course')", 'Course Home')
+await waitFor("document.body?.innerText.includes('Start Course') === true", 'Course Home')
 await assert(
   "document.body.innerText.includes('Lesson 1') && document.body.innerText.includes('Lesson 2') && document.body.innerText.includes('Lesson 3') && document.body.innerText.includes('Lesson 4')",
   'Module 1 exposes all four Lessons',
