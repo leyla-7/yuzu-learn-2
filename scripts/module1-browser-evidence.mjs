@@ -277,7 +277,7 @@ await waitFor(
   "document.body.innerText.includes('Привіт')",
   'L2-S01 reintegration after response',
 )
-await assert(
+await waitFor(
   "document.activeElement?.classList.contains('lesson-feedback') === true",
   'feedback receives focus after response',
 )
