@@ -698,6 +698,10 @@ function Module1LessonRuntime({
               ? 'Build the word that belongs here.'
               : 'Listen. Build the word you hear.'
           }
+          inputReady={
+            session.itemIndex === 0 ||
+            session.playedAudioRoles.includes('w2-neutral')
+          }
           feedback={feedback}
           onCommit={commit}
           onComplete={(next) => {
@@ -909,6 +913,10 @@ function Module1LessonRuntime({
               ? 'Build the word that belongs here.'
               : 'Listen. Build the word you hear.'
           }
+          inputReady={
+            session.itemIndex === 0 ||
+            session.playedAudioRoles.includes('w2-neutral')
+          }
           feedback={feedback}
           onCommit={commit}
           onComplete={(next) => {
@@ -1000,9 +1008,6 @@ function Module1LessonRuntime({
       data-module1-item={session.itemIndex}
       data-deferred-audio-seams={DEFERRED_W2_AUDIO_SEAMS.join('|')}
     >
-      <div className="lesson-progress-meta" aria-hidden="true">
-        <span>{stateSpec.id.toUpperCase()}</span>
-      </div>
       <h2 ref={headingRef} tabIndex={-1} className="activity-heading">
         {stateSpec.heading}
       </h2>
@@ -1274,9 +1279,6 @@ function L2S01({
           />
         ))}
       </div>
-      {!audioPlayed ? (
-        <p className="helper-text">Use Listen before choosing.</p>
-      ) : null}
       <LocalHelp onHelp={onHelp} />
       {feedback}
     </>
@@ -1787,6 +1789,10 @@ function L3S05({
   onHelp: () => void
 }) {
   if (session.itemIndex === 0) {
+    const comparisonReady = Boolean(
+      MODULE1_AUDIO_BINDINGS['w1-neutral'].src &&
+        MODULE1_AUDIO_BINDINGS['w2-neutral'].src,
+    )
     return (
       <section className="integrated-arc" data-listening-protected="true">
         <StaticContext context={MODULE1_CONTEXTS.artStudio} phase="opening" />
@@ -1794,12 +1800,14 @@ function L3S05({
           <AudioChoiceCard
             label="Audio 1"
             role="w1-neutral"
+            choiceEnabled={comparisonReady}
             onPlayed={() => onAudio('w1-neutral')}
             onChoose={() => onOpening(true)}
           />
           <AudioChoiceCard
             label="Audio 2"
             role="w2-neutral"
+            choiceEnabled={comparisonReady}
             onPlayed={() => onAudio('w2-neutral')}
             onChoose={() => onOpening(false)}
           />
@@ -1826,11 +1834,13 @@ function L3S05({
 function AudioChoiceCard({
   label,
   role,
+  choiceEnabled,
   onPlayed,
   onChoose,
 }: {
   label: string
   role: AudioRole
+  choiceEnabled: boolean
   onPlayed: () => void
   onChoose: () => void
 }) {
@@ -1847,7 +1857,7 @@ function AudioChoiceCard({
       <button
         className="button secondary-button"
         type="button"
-        disabled={!binding.src}
+        disabled={!binding.src || !choiceEnabled}
         onClick={onChoose}
         aria-label={`Choose ${label.toLowerCase()}`}
       >
