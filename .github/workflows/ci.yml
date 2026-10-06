@@ -7,12 +7,12 @@ on:
       - work-yuzu-054-technical-foundation
       - work-yuzu-074-app-shell
       - work-yuzu-082-module1-runtime
-      - work-yuzu-082-module1-runtime
       - work-yuzu-085-module1-convergence
   pull_request:
     branches:
       - main
       - work-yuzu-074-app-shell
+      - work-yuzu-082-module1-runtime
 
 permissions:
   contents: read
