@@ -1083,6 +1083,11 @@ function AudioGate({
   const [played, setPlayed] = useState(false)
   const [failed, setFailed] = useState(false)
 
+  useEffect(() => {
+    setPlayed(false)
+    setFailed(false)
+  }, [role])
+
   const play = async () => {
     if (!binding.src) {
       setFailed(true)
