@@ -17,6 +17,10 @@ export interface BrowserLessonSession {
   constructionByKey: Record<string, OrthographicConstructionState>
   playedAudioRoles: readonly string[]
   helpDepthByKey: Record<string, number>
+  pendingNavigation: {
+    stateId: LessonStateId
+    itemIndex: number
+  } | null
   feedback: {
     key: string
     kind: 'success' | 'retry' | 'support'
@@ -40,6 +44,7 @@ export function createBrowserLessonSession(
     constructionByKey: {},
     playedAudioRoles: [],
     helpDepthByKey: {},
+    pendingNavigation: null,
     feedback: null,
   }
 }
@@ -111,6 +116,21 @@ export function decodeBrowserLessonSession(
       (item): item is string => typeof item === 'string',
     ),
     helpDepthByKey: candidate.helpDepthByKey,
+    pendingNavigation:
+      candidate.pendingNavigation &&
+      typeof candidate.pendingNavigation === 'object' &&
+      isLessonStateForLesson(
+        lessonId,
+        candidate.pendingNavigation.stateId,
+      ) &&
+      typeof candidate.pendingNavigation.itemIndex === 'number' &&
+      Number.isInteger(candidate.pendingNavigation.itemIndex) &&
+      candidate.pendingNavigation.itemIndex >= 0
+        ? {
+            stateId: candidate.pendingNavigation.stateId,
+            itemIndex: candidate.pendingNavigation.itemIndex,
+          }
+        : null,
     feedback:
       candidate.feedback &&
       typeof candidate.feedback === 'object' &&
@@ -161,6 +181,7 @@ export function advanceBrowserState(
     ...withOpportunity,
     stateId: next.id,
     itemIndex: 0,
+    pendingNavigation: null,
     feedback: null,
   }
 }
@@ -172,6 +193,7 @@ export function setBrowserItem(
   return {
     ...session,
     itemIndex,
+    pendingNavigation: null,
     feedback: null,
   }
 }
@@ -234,6 +256,48 @@ export function setBrowserFeedback(
   feedback: BrowserLessonSession['feedback'],
 ): BrowserLessonSession {
   return { ...session, feedback }
+}
+
+export function stageBrowserNavigation(
+  current: BrowserLessonSession,
+  target: BrowserLessonSession,
+  feedback: NonNullable<BrowserLessonSession['feedback']>,
+): BrowserLessonSession {
+  const changed =
+    target.stateId !== current.stateId ||
+    target.itemIndex !== current.itemIndex
+
+  if (!changed) {
+    return {
+      ...target,
+      pendingNavigation: null,
+      feedback,
+    }
+  }
+
+  return {
+    ...target,
+    stateId: current.stateId,
+    itemIndex: current.itemIndex,
+    pendingNavigation: {
+      stateId: target.stateId,
+      itemIndex: target.itemIndex,
+    },
+    feedback,
+  }
+}
+
+export function continueBrowserNavigation(
+  session: BrowserLessonSession,
+): BrowserLessonSession {
+  if (!session.pendingNavigation) return session
+  return {
+    ...session,
+    stateId: session.pendingNavigation.stateId,
+    itemIndex: session.pendingNavigation.itemIndex,
+    pendingNavigation: null,
+    feedback: null,
+  }
 }
 
 export function browserSessionAtState(
