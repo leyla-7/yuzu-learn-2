@@ -337,25 +337,17 @@ function Module1LessonRuntime({
           }
           onRenewal={(choice) => {
             const expected = session.itemIndex === 1 ? 'и' : 'і'
-            if (choice !== expected) {
-              commit(
-                setBrowserFeedback(session, {
-                  key: `l2-s01-renewal-${session.itemIndex}`,
-                  kind: 'retry',
-                  text: 'Try again.',
-                }),
-              )
-              return
-            }
-            if (session.itemIndex === 1) {
-              commit(setBrowserItem(session, 2))
-              return
-            }
-            commit(
-              advanceState(
-                withCapabilities(session, ['w1-changed-context-retrieval']),
-              ),
-            )
+            respond({
+              correct: choice === expected,
+              retryText: 'Try again.',
+              suffix: `renewal-${session.itemIndex}`,
+              onCorrect: (next) =>
+                session.itemIndex === 1
+                  ? setBrowserItem(next, 2)
+                  : advanceState(
+                      withCapabilities(next, ['w1-changed-context-retrieval']),
+                    ),
+            })
           }}
         />
       )
@@ -413,28 +405,21 @@ function Module1LessonRuntime({
           session={session}
           feedback={feedback}
           onAudio={(role) => recordAudioPlay(role, 'mapping')}
-          onCorrect={() => {
-            if (session.itemIndex < W2_MAPPING_ORDER.length - 1) {
-              commit(setBrowserItem(session, session.itemIndex + 1))
-            } else {
-              commit(
-                advanceState(
-                  withCapabilities(session, [
-                    'delta-g2-mapping-practice',
-                    'reused-v-context',
-                  ]),
-                ),
-              )
-            }
-          }}
-          onIncorrect={() =>
-            commit(
-              setBrowserFeedback(session, {
-                key: evidenceKey(session, 'mapping'),
-                kind: 'retry',
-                text: 'Replay the sound and try again.',
-              }),
-            )
+          onRespond={(correct) =>
+            respond({
+              correct,
+              retryText: 'Replay the sound and try again.',
+              suffix: 'mapping',
+              onCorrect: (next) =>
+                session.itemIndex < W2_MAPPING_ORDER.length - 1
+                  ? setBrowserItem(next, session.itemIndex + 1)
+                  : advanceState(
+                      withCapabilities(next, [
+                        'delta-g2-mapping-practice',
+                        'reused-v-context',
+                      ]),
+                    ),
+            })
           }
           onHelp={() =>
             applyHelp(
@@ -1370,15 +1355,13 @@ function MappingSequence({
   session,
   feedback,
   onAudio,
-  onCorrect,
-  onIncorrect,
+  onRespond,
   onHelp,
 }: {
   session: BrowserLessonSession
   feedback: ReactNode
   onAudio: (role: AudioRole) => void
-  onCorrect: () => void
-  onIncorrect: () => void
+  onRespond: (correct: boolean) => void
   onHelp: () => void
 }) {
   const grapheme = W2_MAPPING_ORDER[session.itemIndex] ?? 'Б'
@@ -1433,10 +1416,7 @@ function MappingSequence({
             type="button"
             lang="uk"
             disabled={!audioPlayed}
-            onClick={() => {
-              if (option === grapheme) onCorrect()
-              else onIncorrect()
-            }}
+            onClick={() => onRespond(option === grapheme)}
           >
             {option}
           </button>
