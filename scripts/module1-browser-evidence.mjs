@@ -224,6 +224,14 @@ async function keyActivate(selector) {
   await sleep(100)
 }
 
+async function continueFromSuccess(label) {
+  await waitFor(
+    "document.activeElement?.classList.contains('lesson-feedback') === true",
+    `${label} feedback focus`,
+  )
+  await clickText('Continue')
+}
+
 const evidence = {
   shellIntegration: false,
   acceptedW1RealPlayback: false,
@@ -273,21 +281,20 @@ await assert(
 await clickAudio('w1-neutral')
 evidence.acceptedW1RealPlayback = true
 await clickSelector('[data-moment-id="cinema-opening"]')
+await continueFromSuccess('L2-S01 context response')
 await waitFor(
   "document.body.innerText.includes('Привіт')",
   'L2-S01 reintegration after response',
 )
-await waitFor(
-  "document.activeElement?.classList.contains('lesson-feedback') === true",
-  'feedback receives focus after response',
-)
 await screenshot('02-l2-s01-reintegration.png')
 await clickText('и', '.grapheme-button')
+await continueFromSuccess('L2-S01 и renewal')
 await waitFor(
   `document.querySelector('[data-module1-state="l2-s01"][data-module1-item="2"]') !== null`,
   'L2-S01 second vowel renewal',
 )
 await clickText('і', '.grapheme-button')
+await continueFromSuccess('L2-S01 і renewal')
 await waitFor(
   `document.querySelector('[data-module1-state="l2-s02"]') !== null`,
   'L2-S02 after both W1 renewals',
@@ -311,12 +318,14 @@ evidence.w2SeamsNoInventedSource = true
 // Unrelated later states remain independently implemented and verifiable despite that seam.
 await seed('lesson-2', 'l2-s03')
 await keyActivate('.target-choice:last-child')
+await continueFromSuccess('keyboard target-choice response')
 await waitFor(
   `document.querySelector('[data-module1-item="1"]') !== null`,
   'keyboard target-choice activation',
 )
 evidence.focusKeyboard = true
 await clickText('Бувай')
+await continueFromSuccess('L2-S03 closing response')
 await waitFor(
   `document.querySelector('[data-module1-state="l2-s04"]') !== null`,
   'L2-S04 mapping',
@@ -339,6 +348,7 @@ await assert(
   'L2 read state has print and no target autoplay',
 )
 await clickSelector('[data-moment-id="park-closing"]')
+await continueFromSuccess('L2-S05 reading response')
 await waitFor(
   `document.querySelector('[data-module1-state="l2-s06"]') !== null`,
   'L2-S06 supported construction',
@@ -371,6 +381,7 @@ await assert(
 )
 await clickAudio('w1-neutral')
 await clickSelector('[data-moment-id="basketball-opening"]')
+await continueFromSuccess('L3 W1 listening response')
 await waitFor(
   `document.querySelector('[data-module1-item="1"]') !== null`,
   'L3 listening W2 item',
@@ -398,6 +409,7 @@ await assert(
   'L3 reading has no target autoplay control',
 )
 await clickSelector('[data-moment-id="bicycle-opening"]')
+await continueFromSuccess('L3 W1 reading response')
 await waitFor(
   "document.body.innerText.includes('Бувай')",
   'L3 second read item',
@@ -450,6 +462,7 @@ for (const grapheme of ['и', 'в', 'і', 'т']) {
   await clickText(grapheme, '.construction-pool .grapheme-button')
 }
 await clickText('Check')
+await continueFromSuccess('L3 W1 construction response')
 await waitFor(
   `document.querySelector('[data-module1-item="1"]') !== null`,
   'L3 W1 construction completes into W2 item',
