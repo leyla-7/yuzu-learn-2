@@ -7,6 +7,8 @@ on:
       - work-yuzu-054-technical-foundation
       - work-yuzu-074-app-shell
       - work-yuzu-082-module1-runtime
+      - work-yuzu-082-module1-runtime
+      - work-yuzu-085-module1-convergence
   pull_request:
     branches:
       - main
@@ -68,6 +70,49 @@ jobs:
             cat /tmp/yuzu-shell-http.log || true
             exit 1
           fi
+
+      - name: Capture WORK-YUZU-085 Module-1 browser evidence
+        run: |
+          set -euo pipefail
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME_BIN" ]; then
+            echo "No Chrome/Chromium binary found on runner" >&2
+            exit 1
+          fi
+
+          mkdir -p browser-evidence-085
+          python3 -m http.server 4173 -d dist >/tmp/yuzu-085-http.log 2>&1 &
+          HTTP_PID=$!
+          "$CHROME_BIN" \
+            --headless=new \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --autoplay-policy=no-user-gesture-required \
+            --remote-debugging-port=9222 \
+            --user-data-dir=/tmp/yuzu-085-chrome \
+            about:blank >/tmp/yuzu-085-chrome.log 2>&1 &
+          CHROME_PID=$!
+
+          cleanup() {
+            kill "$HTTP_PID" "$CHROME_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          if ! node scripts/module1-browser-evidence.mjs; then
+            echo "--- Chrome log ---"
+            cat /tmp/yuzu-085-chrome.log || true
+            echo "--- HTTP server log ---"
+            cat /tmp/yuzu-085-http.log || true
+            exit 1
+          fi
+
+      - name: Upload WORK-YUZU-085 browser evidence
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: work-yuzu-085-browser-evidence
+          path: browser-evidence-085
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload shell build
         uses: actions/upload-artifact@v4.6.2
