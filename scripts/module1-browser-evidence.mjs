@@ -272,7 +272,7 @@ await assert(
 )
 await clickAudio('w1-neutral')
 evidence.acceptedW1RealPlayback = true
-await keyActivate('[data-moment-id="cinema-opening"]')
+await clickSelector('[data-moment-id="cinema-opening"]')
 await waitFor(
   "document.body.innerText.includes('Привіт')",
   'L2-S01 reintegration after response',
@@ -281,7 +281,6 @@ await assert(
   "document.activeElement?.classList.contains('lesson-feedback') === true",
   'feedback receives focus after response',
 )
-evidence.focusKeyboard = true
 await screenshot('02-l2-s01-reintegration.png')
 await clickText('и', '.grapheme-button')
 await waitFor(
@@ -304,11 +303,12 @@ await waitFor(
   `document.querySelector('[data-module1-state="l2-s03"]') !== null`,
   'L2-S03 function practice',
 )
-await clickText('Привіт')
+await keyActivate('.target-choice:last-child')
 await waitFor(
   `document.querySelector('[data-module1-item="1"]') !== null`,
-  'L2-S03 second item',
+  'keyboard target-choice activation',
 )
+evidence.focusKeyboard = true
 await clickText('Бувай')
 await waitFor(
   `document.querySelector('[data-module1-state="l2-s04"]') !== null`,
