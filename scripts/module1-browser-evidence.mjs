@@ -208,18 +208,19 @@ async function keyActivate(selector) {
   })()`)
   if (!focused) throw new Error(`Could not focus ${selector}`)
   await call('Input.dispatchKeyEvent', {
-    type: 'rawKeyDown',
-    key: 'Enter',
-    code: 'Enter',
-    windowsVirtualKeyCode: 13,
-    nativeVirtualKeyCode: 13,
+    type: 'keyDown',
+    key: ' ',
+    code: 'Space',
+    text: ' ',
+    windowsVirtualKeyCode: 32,
+    nativeVirtualKeyCode: 32,
   })
   await call('Input.dispatchKeyEvent', {
     type: 'keyUp',
-    key: 'Enter',
-    code: 'Enter',
-    windowsVirtualKeyCode: 13,
-    nativeVirtualKeyCode: 13,
+    key: ' ',
+    code: 'Space',
+    windowsVirtualKeyCode: 32,
+    nativeVirtualKeyCode: 32,
   })
   await sleep(100)
 }
