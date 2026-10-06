@@ -364,7 +364,7 @@ await assert(
 )
 await clickText('Listen')
 await waitFor(
-  "document.body.innerText.includes("This audio couldn't be loaded.")",
+  `document.body.innerText.includes("This audio couldn't be loaded.")`,
   'deferred W2 seam exposes technical state',
 )
 await assert(
