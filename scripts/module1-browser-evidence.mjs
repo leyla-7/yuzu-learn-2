@@ -208,7 +208,7 @@ async function keyActivate(selector) {
   })()`)
   if (!focused) throw new Error(`Could not focus ${selector}`)
   await call('Input.dispatchKeyEvent', {
-    type: 'keyDown',
+    type: 'rawKeyDown',
     key: 'Enter',
     code: 'Enter',
     windowsVirtualKeyCode: 13,
