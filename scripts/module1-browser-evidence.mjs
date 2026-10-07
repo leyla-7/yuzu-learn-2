@@ -528,12 +528,22 @@ await assert(
 )
 await screenshot('08-mobile-l2-function.png')
 
-await evaluate("document.documentElement.style.fontSize = '200%'")
-await sleep(100)
+// 081 specifies 200% browser zoom, not doubled root font sizing.
+// Starting from the 1280px desktop evidence viewport, 200% browser zoom
+// presents approximately a 640 CSS px layout viewport. Verify that reflow
+// condition directly rather than doubling every rem-based spacing value.
+await call('Emulation.setDeviceMetricsOverride', {
+  width: 640,
+  height: 450,
+  deviceScaleFactor: 2,
+  mobile: false,
+})
+await seed('lesson-2', 'l2-s03')
 await assert(
   'document.documentElement.scrollWidth <= document.documentElement.clientWidth',
-  '200% root text scale has no horizontal page scrolling',
+  '200% browser-zoom-equivalent reflow has no horizontal page scrolling',
 )
+await screenshot('09-zoom-200-reflow.png')
 evidence.responsive = true
 
 await assert(
