@@ -478,7 +478,7 @@ await screenshot('07-l3-reduced-construction.png')
 // The two-audio integrated comparison stays non-answer-bearing while one role is deferred.
 await seed('lesson-3', 'l3-s05')
 await assert(
-  "[...document.querySelectorAll('.audio-choice-card .secondary-button')].every((button) => button.disabled)",
+  "[...document.querySelectorAll('.audio-choice-card button[aria-label^=\"Choose audio\"]')].length === 2 && [...document.querySelectorAll('.audio-choice-card button[aria-label^=\"Choose audio\"]')].every((button) => button.disabled)",
   'two-audio comparison cannot use W1 availability to reveal the deferred W2 answer',
 )
 await assert(
