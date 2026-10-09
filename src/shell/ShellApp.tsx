@@ -26,6 +26,7 @@ import {
   type ShellState,
 } from './model'
 import { parseShellRoute, routeHash, type ShellRoute } from './routing'
+import { Module1LessonApp } from '../module1/Module1LessonApp'
 import {
   LESSON_COMPLETE_EVENT,
   LESSON_LOAD_FAILED_EVENT,
@@ -743,7 +744,14 @@ function LessonBoundary({
           data-lesson-mode={mode}
           data-resume-point={resumePoint ?? ''}
           data-use-nonvisual-alternatives={String(useNonvisualAlternatives)}
-        />
+        >
+          <Module1LessonApp
+            lessonId={lesson.id}
+            mode={mode}
+            resumePoint={resumePoint}
+            useNonvisualAlternatives={useNonvisualAlternatives}
+          />
+        </section>
       </main>
     </ShellFrame>
   )
@@ -819,9 +827,24 @@ function PostLesson({
       <main id="main-content" className="shell-main continuation-card">
         <div className="completion-icon" aria-hidden="true">✓</div>
         <h1 ref={headingRef} tabIndex={-1}>Lesson complete</h1>
-        <p>{lesson?.label ?? 'Lesson'}</p>
+        {lessonId === 'lesson-2' ? (
+          <>
+            <p>Lesson complete. <span lang="uk">Привіт</span> and <span lang="uk">Бувай</span> will return.</p>
+            <p>You worked with the beginning and end of a familiar interaction.</p>
+          </>
+        ) : lessonId === 'lesson-3' ? (
+          <p>Lesson complete. You used the two words again in new situations.</p>
+        ) : lessonId === 'lesson-4' ? (
+          <p>Lesson complete. You worked with <span lang="uk">Привіт</span> and <span lang="uk">Бувай</span> again in new situations.</p>
+        ) : (
+          <p>{lesson?.label ?? 'Lesson'}</p>
+        )}
         {module && getModuleStatus(module, state) === 'completed' ? (
-          <p className="state-label">Module complete</p>
+          <div className="module-completion-copy">
+            <p className="state-label">Module 1 complete.</p>
+            <p>You worked with <span lang="uk">Привіт</span> and <span lang="uk">Бувай</span> in sound, print, and familiar opening and closing moments.</p>
+            <p>These words and letter-sound links will return later.</p>
+          </div>
         ) : null}
         {recommended ? (
           <>

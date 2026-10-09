@@ -55,12 +55,30 @@ export const UKRAINIAN_A1_SHELL_SLICE: CourseDefinition = {
     {
       id: 'module-1',
       label: 'Module 1',
-      definitionComplete: false,
+      definitionComplete: true,
       lessons: [
         {
           id: 'lesson-1',
           label: 'Lesson 1',
           required: true,
+        },
+        {
+          id: 'lesson-2',
+          label: 'Lesson 2',
+          required: true,
+          prerequisiteLessonIds: ['lesson-1'],
+        },
+        {
+          id: 'lesson-3',
+          label: 'Lesson 3',
+          required: true,
+          prerequisiteLessonIds: ['lesson-2'],
+        },
+        {
+          id: 'lesson-4',
+          label: 'Lesson 4',
+          required: true,
+          prerequisiteLessonIds: ['lesson-3'],
         },
       ],
     },
