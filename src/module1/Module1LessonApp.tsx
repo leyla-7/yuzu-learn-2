@@ -1530,6 +1530,71 @@ function ConstructionActivity({
   const target =
     contract.targetId === 'w1' ? W1 : W2
   const helpDepth = session.helpDepthByKey[key] ?? 0
+  const choiceRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const undoRef = useRef<HTMLButtonElement>(null)
+  const checkRef = useRef<HTMLButtonElement>(null)
+  const pendingPlacementFocusRef = useRef<{
+    placedIndex: number
+    finalSupportedPlacement: boolean
+  } | null>(null)
+  const restoreAfterFeedbackRef = useRef(false)
+  const localRecoveryFeedback =
+    session.feedback?.key === key && session.feedback.kind !== 'success'
+      ? session.feedback
+      : null
+  const canCheck = contract.targetLengthSupport
+    ? construction.sequence.length === target.length
+    : construction.sequence.length > 0
+
+  useEffect(() => {
+    const pending = pendingPlacementFocusRef.current
+    if (!pending) return
+    pendingPlacementFocusRef.current = null
+
+    if (
+      pending.finalSupportedPlacement &&
+      checkRef.current &&
+      !checkRef.current.disabled
+    ) {
+      checkRef.current.focus({ preventScroll: true })
+      return
+    }
+
+    const choices = choiceRefs.current
+    for (let offset = 1; offset <= choices.length; offset += 1) {
+      const index = (pending.placedIndex + offset) % choices.length
+      const choice = choices[index]
+      if (choice && !choice.disabled) {
+        choice.focus({ preventScroll: true })
+        return
+      }
+    }
+
+    if (checkRef.current && !checkRef.current.disabled) {
+      checkRef.current.focus({ preventScroll: true })
+    } else if (undoRef.current && !undoRef.current.disabled) {
+      undoRef.current.focus({ preventScroll: true })
+    }
+  }, [canCheck, construction.sequence])
+
+  useEffect(() => {
+    if (localRecoveryFeedback) {
+      restoreAfterFeedbackRef.current = true
+      return
+    }
+    if (!restoreAfterFeedbackRef.current) return
+    restoreAfterFeedbackRef.current = false
+
+    if (undoRef.current && !undoRef.current.disabled) {
+      undoRef.current.focus({ preventScroll: true })
+      return
+    }
+
+    const firstActionableChoice = choiceRefs.current.find(
+      (choice) => choice && !choice.disabled,
+    )
+    firstActionableChoice?.focus({ preventScroll: true })
+  }, [construction.sequence, inputReady, localRecoveryFeedback])
 
   const commitConstruction = (
     nextConstruction: typeof construction,
@@ -1540,16 +1605,26 @@ function ConstructionActivity({
     onCommit(next)
   }
 
-  const add = (grapheme: (typeof pool)[number]) => {
+  const add = (grapheme: (typeof pool)[number], placedIndex: number) => {
     if (
       pool.filter((candidate) => candidate === grapheme).length <=
       construction.sequence.filter((candidate) => candidate === grapheme).length
     ) {
       return
     }
-    commitConstruction(
-      appendConstructionGrapheme(construction, contract, grapheme),
+
+    const nextConstruction = appendConstructionGrapheme(
+      construction,
+      contract,
+      grapheme,
     )
+    pendingPlacementFocusRef.current = {
+      placedIndex,
+      finalSupportedPlacement:
+        contract.targetLengthSupport &&
+        nextConstruction.sequence.length === target.length,
+    }
+    commitConstruction(nextConstruction)
   }
 
   const undo = () =>
@@ -1619,10 +1694,6 @@ function ConstructionActivity({
     onCommit(next)
   }
 
-  const canCheck = contract.targetLengthSupport
-    ? construction.sequence.length === target.length
-    : construction.sequence.length > 0
-
   return (
     <section
       className="construction-activity"
@@ -1657,7 +1728,7 @@ function ConstructionActivity({
         </div>
       )}
       <div className="construction-pool" role="group" aria-label="Available letters">
-        {pool.map((grapheme) => {
+        {pool.map((grapheme, index) => {
           const used =
             construction.sequence.filter((candidate) => candidate === grapheme)
               .length >= pool.filter((candidate) => candidate === grapheme).length
@@ -1667,8 +1738,11 @@ function ConstructionActivity({
               className="grapheme-button"
               type="button"
               lang="uk"
+              ref={(node) => {
+                choiceRefs.current[index] = node
+              }}
               disabled={used || !inputReady}
-              onClick={() => add(grapheme)}
+              onClick={() => add(grapheme, index)}
             >
               {grapheme}
             </button>
@@ -1677,6 +1751,7 @@ function ConstructionActivity({
       </div>
       <div className="construction-actions">
         <button
+          ref={undoRef}
           className="button secondary-button"
           type="button"
           disabled={construction.sequence.length === 0}
@@ -1685,6 +1760,7 @@ function ConstructionActivity({
           Undo
         </button>
         <button
+          ref={checkRef}
           className="button primary-button"
           type="button"
           disabled={!inputReady || !canCheck}

@@ -108,6 +108,39 @@ async function clickSelector(selector, index = 0) {
   await sleep(80)
 }
 
+async function pointerActivateText(text, selector = 'button') {
+  const point = await evaluate(`(() => {
+    const target = ${byText(text, selector)}
+    if (!target || target.disabled) return null
+    const rect = target.getBoundingClientRect()
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    }
+  })()`)
+  if (!point) throw new Error(`Could not pointer-activate ${text}`)
+  await call('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: point.x,
+    y: point.y,
+  })
+  await call('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1,
+  })
+  await call('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: point.x,
+    y: point.y,
+    button: 'left',
+    clickCount: 1,
+  })
+  await sleep(100)
+}
+
 async function screenshot(name) {
   const result = await call('Page.captureScreenshot', {
     format: 'png',
@@ -225,6 +258,29 @@ async function keyActivate(selector) {
   await sleep(100)
 }
 
+async function keyActivateActive() {
+  const active = await evaluate(
+    `document.activeElement instanceof HTMLButtonElement && !document.activeElement.disabled`,
+  )
+  if (!active) throw new Error('No actionable button currently focused')
+  await call('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key: ' ',
+    code: 'Space',
+    text: ' ',
+    windowsVirtualKeyCode: 32,
+    nativeVirtualKeyCode: 32,
+  })
+  await call('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: ' ',
+    code: 'Space',
+    windowsVirtualKeyCode: 32,
+    nativeVirtualKeyCode: 32,
+  })
+  await sleep(100)
+}
+
 async function continueFromSuccess(label) {
   await waitFor(
     "document.activeElement?.classList.contains('lesson-feedback') === true",
@@ -245,6 +301,12 @@ const evidence = {
   accessibilityRoute: false,
   l4ReducedConstruction: false,
   focusKeyboard: false,
+  constructionPlacementFocus: false,
+  constructionFinalPlacementFocus: false,
+  constructionRetryFocus: false,
+  constructionRecoveryFocus: false,
+  constructionPointerKeyboardEquivalent: false,
+  reducedConstructionFocusNoLengthLeak: false,
   responsive: false,
   noFalseMasteryCopy: false,
   mediaSlotsPresent: false,
@@ -436,6 +498,74 @@ await assert(
 )
 evidence.accessibilityRoute = true
 await screenshot('06-l3-accessible-reading-route.png')
+
+// WORK-YUZU-088 focused ordered-construction focus fidelity.
+await seed('lesson-2', 'l2-s05', { nonvisual: true })
+await pointerActivateText('Б', '.construction-pool .grapheme-button')
+await assert(
+  "document.activeElement?.textContent?.trim() === 'у'",
+  'pointer placement keeps focus in construction and advances to next actionable grapheme',
+)
+evidence.constructionPlacementFocus = true
+await keyActivateActive()
+await assert(
+  "document.activeElement?.textContent?.trim() === 'в'",
+  'keyboard placement follows the same next-actionable focus rule',
+)
+await pointerActivateText('в', '.construction-pool .grapheme-button')
+await assert(
+  "document.activeElement?.textContent?.trim() === 'а'",
+  'pointer path remains equivalent after another placement',
+)
+await keyActivateActive()
+await assert(
+  "document.activeElement?.textContent?.trim() === 'й'",
+  'keyboard path remains equivalent before final placement',
+)
+await keyActivateActive()
+await assert(
+  "document.activeElement?.textContent?.trim() === 'Check'",
+  'L2 supported fifth placement may move focus to Check',
+)
+evidence.constructionFinalPlacementFocus = true
+evidence.constructionPointerKeyboardEquivalent = true
+
+await seed('lesson-2', 'l2-s05', { nonvisual: true })
+for (const grapheme of ['у', 'Б', 'в', 'а', 'й']) {
+  await clickText(grapheme, '.construction-pool .grapheme-button')
+}
+await pointerActivateText('Check')
+await waitFor(
+  "document.activeElement?.classList.contains('lesson-feedback') === true",
+  'failed construction Check feedback announcement focus',
+)
+await pointerActivateText('Try again')
+await waitFor(
+  "document.activeElement?.textContent?.trim() === 'Undo'",
+  'failed Check retry restores construction focus to Undo',
+)
+evidence.constructionRetryFocus = true
+
+await seed('lesson-2', 'l2-s05', { nonvisual: true })
+await pointerActivateText('Help')
+await waitFor(
+  "document.activeElement?.classList.contains('lesson-feedback') === true",
+  'construction Help feedback announcement focus',
+)
+await pointerActivateText('Try again')
+await waitFor(
+  "document.activeElement?.textContent?.trim() === 'Б'",
+  'empty construction recovery restores focus to first actionable grapheme',
+)
+evidence.constructionRecoveryFocus = true
+
+await seed('lesson-3', 'l3-s04')
+await pointerActivateText('П', '.construction-pool .grapheme-button')
+await assert(
+  "document.activeElement?.textContent?.trim() !== 'Check' && document.activeElement?.classList.contains('grapheme-button') === true",
+  'reduced-support placement stays in grapheme pool and does not leak hidden target length via Check focus',
+)
+evidence.reducedConstructionFocusNoLengthLeak = true
 
 // Reduced construction, partial-state safe resume, broad K2 pool.
 await seed('lesson-3', 'l3-s04')
