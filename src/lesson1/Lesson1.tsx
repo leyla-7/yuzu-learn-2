@@ -1,1098 +1,623 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  ACCESSIBLE_L9_HELP_TRIGGERS,
-  BUILD_PASS_CONFIGS,
-  LESSON1_AUDIO_ASSETS,
-  createMappingPractice,
-  createVowelPractice,
-  getVisualL9Options,
-  scheduleAdaptiveRetry,
-  type Lesson1AudioAssetId,
-  type MappingPracticeTrial,
-  type MappingAudioAssetId,
-  type TaughtGrapheme,
-  type VowelPracticeTrial,
-} from './browser-model'
-import {
-  ACCESSIBLE_L9_COMPONENTS,
-  completeCurrentEpisode,
-  createInitialLesson1State,
-  recordAccessibleL9Help,
-  recordAccessibleL9Reintegration,
-  recordMappingAttempt,
-  recordReconstructionAttempt,
-  recordSemanticReconnection,
-  recordVisualL9Attempt,
-  recordVisualL9Help,
-  recordVowelContrastAttempt,
-  selectAccessibleL9Component,
-  selectL9Route,
-  submitAccessibleL9Sequence,
-  undoAccessibleL9Component,
-  type AccessibleL9Component,
-  type Lesson1RuntimeState,
-  type VisualL9OptionId,
-} from './state'
+import { LESSON1_AUDIO_ASSETS } from './browser-model'
 
-const TARGET_SEQUENCE: readonly AccessibleL9Component[] = [
-  'П',
-  'р',
-  'и',
-  'в',
-  'і',
-  'т',
+type AudioId = keyof typeof LESSON1_AUDIO_ASSETS
+type Grapheme = 'П' | 'п' | 'р' | 'и' | 'в' | 'і' | 'т'
+type CoreGrapheme = 'П' | 'р' | 'и' | 'в' | 'і' | 'т'
+
+type View =
+  | { kind: 'encounter' }
+  | { kind: 'mapping-teach'; index: number }
+  | { kind: 'mapping-guided'; index: number; lowercase?: boolean }
+  | { kind: 'mapping-retrieve-p' }
+  | { kind: 'vowel-compare' }
+  | { kind: 'vowel-trial'; index: number }
+  | { kind: 'supported-build' }
+  | { kind: 'reduced-build' }
+  | { kind: 'context-return' }
+  | { kind: 'complete' }
+
+const WORD: readonly CoreGrapheme[] = ['П', 'р', 'и', 'в', 'і', 'т']
+const SUPPORTED_BANK: readonly CoreGrapheme[] = ['в', 'П', 'т', 'и', 'р', 'і']
+const REDUCED_BANK: readonly CoreGrapheme[] = ['і', 'р', 'т', 'П', 'в', 'и']
+
+const MAPPINGS: readonly {
+  grapheme: CoreGrapheme
+  audio: AudioId
+  guidedChoices: readonly Grapheme[]
+}[] = [
+  { grapheme: 'П', audio: 'p', guidedChoices: ['П', 'т', 'в'] },
+  { grapheme: 'р', audio: 'r', guidedChoices: ['р', 'в', 'т'] },
+  { grapheme: 'в', audio: 'v', guidedChoices: ['в', 'р', 'т'] },
+  { grapheme: 'т', audio: 't', guidedChoices: ['т', 'в', 'р'] },
 ]
 
-type ContextKind = 'courtyard' | 'park'
-type ContextMoment = 'before' | 'beginning' | 'engaged' | 'departure'
-
-interface ContextOption {
-  id: string
-  moment: ContextMoment
-  correct: boolean
-  accessibleLabel: string
-}
-
-const COURTYARD_OPTIONS: readonly ContextOption[] = [
-  {
-    id: 'c2-before',
-    moment: 'before',
-    correct: false,
-    accessibleLabel: 'Before contact',
-  },
-  {
-    id: 'c2-beginning',
-    moment: 'beginning',
-    correct: true,
-    accessibleLabel: 'Beginning of contact',
-  },
-  {
-    id: 'c2-engaged',
-    moment: 'engaged',
-    correct: false,
-    accessibleLabel: 'Already engaged',
-  },
+const VOWEL_TRIALS = [
+  { direction: 'sound-print' as const, grapheme: 'и' as const, audio: 'y' as const },
+  { direction: 'sound-print' as const, grapheme: 'і' as const, audio: 'i' as const },
+  { direction: 'print-sound' as const, grapheme: 'и' as const, audio: 'y' as const },
+  { direction: 'print-sound' as const, grapheme: 'і' as const, audio: 'i' as const },
 ]
 
-const PARK_OPTIONS: readonly ContextOption[] = [
-  {
-    id: 'c6-approach',
-    moment: 'before',
-    correct: false,
-    accessibleLabel: 'Approach',
-  },
-  {
-    id: 'c6-beginning',
-    moment: 'beginning',
-    correct: true,
-    accessibleLabel: 'Beginning of contact',
-  },
-  {
-    id: 'c6-engaged',
-    moment: 'engaged',
-    correct: false,
-    accessibleLabel: 'Already engaged',
-  },
-  {
-    id: 'c6-departure',
-    moment: 'departure',
-    correct: false,
-    accessibleLabel: 'Departure',
-  },
-]
-
-function rotate<T>(items: readonly T[], amount: number): readonly T[] {
-  if (items.length === 0) return items
-  const offset = amount % items.length
-  return [...items.slice(offset), ...items.slice(0, offset)]
+const AUDIO_FOR: Record<CoreGrapheme, AudioId> = {
+  П: 'p',
+  р: 'r',
+  и: 'y',
+  в: 'v',
+  і: 'i',
+  т: 't',
 }
 
-function sequenceMatches(
-  actual: readonly AccessibleL9Component[],
-  expected: readonly AccessibleL9Component[],
-): boolean {
-  return (
-    actual.length === expected.length &&
-    actual.every((item, index) => item === expected[index])
-  )
-}
+const CONTEXTS = [
+  { label: 'One person is reading as another approaches.', position: '0%' },
+  { label: 'The two people face one another; one raises a hand.', position: '33.333%' },
+  { label: 'The two people are sitting together looking at a phone.', position: '66.666%' },
+  { label: 'One person is walking away while they wave.', position: '100%' },
+] as const
 
-function AudioControl({
+function AudioButton({
   audioId,
-  label,
-  onChoose,
-  index,
+  label = 'Listen',
+  compact = false,
 }: {
-  audioId: Lesson1AudioAssetId | MappingAudioAssetId
-  label: 'Listen' | 'Replay'
-  onChoose?: () => void
-  index?: number
+  audioId: AudioId
+  label?: string
+  compact?: boolean
 }) {
   const asset = LESSON1_AUDIO_ASSETS[audioId]
   const mediaRef = useRef<HTMLAudioElement>(null)
-  const playbackGenerationRef = useRef(0)
+  const [played, setPlayed] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
 
-  async function playAcceptedSources(): Promise<boolean> {
+  async function play() {
     const media = mediaRef.current
-    if (!media) return false
+    if (!media) return
+    setStatus('loading')
 
-    const generation = ++playbackGenerationRef.current
-    media.dataset.audioPlayback = 'playing'
-
-    for (const [sourceIndex, source] of asset.sources.entries()) {
-      if (generation !== playbackGenerationRef.current) return false
-
-      media.src = source
-      media.dataset.audioCurrentSource = source
-      media.dataset.audioSourceIndex = String(sourceIndex)
-      media.load()
-
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          media.removeEventListener('ended', onEnded)
-          media.removeEventListener('error', onError)
-        }
-        const onEnded = () => {
-          cleanup()
-          resolve()
-        }
-        const onError = () => {
-          cleanup()
-          reject(new Error(`Audio playback failed: ${source}`))
-        }
-
-        media.addEventListener('ended', onEnded, { once: true })
-        media.addEventListener('error', onError, { once: true })
-        void media.play().catch((error) => {
-          cleanup()
-          reject(error)
-        })
-      })
-    }
-
-    if (generation !== playbackGenerationRef.current) return false
-    media.dataset.audioPlayback = 'complete'
-    return true
-  }
-
-  async function activate() {
     try {
-      if (await playAcceptedSources()) onChoose?.()
-    } catch (error) {
-      console.error('Lesson audio playback failed', asset.id, error)
+      for (const source of asset.sources) {
+        media.src = source
+        media.load()
+        await new Promise<void>((resolve, reject) => {
+          const cleanup = () => {
+            media.removeEventListener('ended', onEnded)
+            media.removeEventListener('error', onError)
+          }
+          const onEnded = () => {
+            cleanup()
+            resolve()
+          }
+          const onError = () => {
+            cleanup()
+            reject(new Error('audio-load-failure'))
+          }
+          media.addEventListener('ended', onEnded, { once: true })
+          media.addEventListener('error', onError, { once: true })
+          void media.play().catch(reject)
+        })
+      }
+      setPlayed(true)
+      setStatus('idle')
+    } catch {
+      setStatus('error')
     }
   }
 
   return (
-    <>
+    <div className={compact ? 'audio-wrap is-compact' : 'audio-wrap'}>
       <button
-        className="audio-control"
         type="button"
+        className="audio-button"
         data-audio-id={asset.id}
-        data-audio-status={asset.status}
         data-audio-sources={asset.sources.join('|')}
-        aria-label={index === undefined ? label : `${label} ${index}`}
-        onClick={() => void activate()}
+        aria-label={`${label}; listen or Replay`}
+        onClick={() => void play()}
       >
-        <span className="audio-icon" aria-hidden="true">
-          ▶
-        </span>
-        <span>{label}</span>
-        {index === undefined ? null : (
-          <span className="audio-index" aria-hidden="true">
-            {index}
-          </span>
-        )}
+        <span className="audio-symbol" aria-hidden="true">▶</span>
+        <span>{played ? 'Replay' : label}</span>
       </button>
-      <audio
-        ref={mediaRef}
-        preload="auto"
-        hidden
-        data-audio-media-id={asset.id}
-      />
-    </>
+      <audio ref={mediaRef} hidden preload="auto" data-audio-media-id={asset.id} />
+      {status === 'loading' ? <span className="audio-status">Loading…</span> : null}
+      {status === 'error' ? (
+        <div className="technical-error" role="alert">
+          <span>This audio couldn’t load.</span>
+          <button type="button" className="text-button" onClick={() => void play()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
-function Progress({ step }: { step: number }) {
+function FocusWord({ focus }: { focus?: CoreGrapheme }) {
   return (
-    <div className="lesson-progress" aria-hidden="true">
-      {Array.from({ length: 8 }, (_, index) => (
-        <span
-          className={index <= step ? 'progress-dot is-active' : 'progress-dot'}
-          key={index}
-        />
+    <div className="focus-word" lang="uk" aria-label="Привіт">
+      {WORD.map((letter, index) => (
+        <span className={letter === focus ? 'is-focused' : ''} key={`${letter}-${index}`}>
+          {letter}
+        </span>
       ))}
     </div>
   )
 }
 
-function SceneArt({
-  kind,
-  moment,
+function AudioChoiceRow({
+  audioId,
+  label,
+  onChoose,
 }: {
-  kind: ContextKind | 'greeting'
-  moment: ContextMoment
+  audioId: AudioId
+  label: string
+  onChoose: () => void
 }) {
-  const isPark = kind === 'park'
-  const isBeginning = moment === 'beginning'
-  const isEngaged = moment === 'engaged'
-  const isDeparture = moment === 'departure'
-
   return (
-    <div
-      className={`scene-art scene-${kind} moment-${moment}`}
-      aria-hidden="true"
-    >
-      {isPark ? (
-        <>
-          <span className="tree tree-left" />
-          <span className="tree tree-right" />
-          <span className="bench" />
-        </>
-      ) : (
-        <>
-          <span className="courtyard-wall" />
-          <span className="courtyard-window" />
-        </>
-      )}
-      <span
-        className={`person person-a ${
-          isBeginning || isEngaged ? 'is-near' : ''
-        }`}
-      >
-        <span className="person-head" />
-        <span className="person-body" />
-      </span>
-      <span
-        className={`person person-b ${
-          isBeginning || isEngaged ? 'is-near' : ''
-        } ${isDeparture ? 'is-leaving' : ''}`}
-      >
-        <span className="person-head" />
-        <span className="person-body" />
-      </span>
+    <div className="sound-option">
+      <AudioButton audioId={audioId} label={label} compact />
+      <button type="button" className="choose-sound" onClick={onChoose}>
+        Choose
+      </button>
     </div>
   )
 }
 
-function ContextChoice({
-  kind,
-  options,
-  onComplete,
+function ContextTile({
+  index,
+  onChoose,
 }: {
-  kind: ContextKind
-  options: readonly ContextOption[]
-  onComplete: () => void
+  index: number
+  onChoose: () => void
 }) {
-  const [feedback, setFeedback] = useState<'idle' | 'retry' | 'success'>(
-    'idle',
-  )
-
-  function choose(option: ContextOption) {
-    if (option.correct) {
-      setFeedback('success')
-      return
-    }
-    setFeedback('retry')
-  }
-
+  const context = CONTEXTS[index]!
   return (
-    <section className="lesson-card context-step">
-      <div className="action-heading">Choose</div>
-      <div
-        className={`context-grid context-grid-${options.length}`}
-        role="group"
-        aria-label="Choose"
-      >
-        {options.map((option, index) => (
-          <button
-            className="scene-choice"
-            type="button"
-            key={option.id}
-            aria-label={option.accessibleLabel}
-            onClick={() => choose(option)}
-          >
-            <span className="scene-number" aria-hidden="true">
-              {index + 1}
-            </span>
-            <SceneArt kind={kind} moment={option.moment} />
-          </button>
-        ))}
-      </div>
-      <div className="feedback-row" aria-live="polite">
-        {feedback === 'retry' ? <span>Try again</span> : null}
-        {feedback === 'success' ? (
-          <>
-            <span className="success-mark" aria-label="Correct">
-              ✓
-            </span>
-            <button className="primary-action" type="button" onClick={onComplete}>
-              Continue
-            </button>
-          </>
-        ) : null}
-      </div>
-    </section>
+    <button
+      type="button"
+      className="context-tile"
+      aria-label={context.label}
+      onClick={onChoose}
+    >
+      <span
+        className="context-image"
+        aria-hidden="true"
+        style={{ backgroundPosition: context.position }}
+      />
+      <span className="context-number" aria-hidden="true">{index + 1}</span>
+    </button>
   )
 }
 
-function MappingPractice({
-  onComplete,
-  runtime,
-  setRuntime,
-}: {
-  onComplete: () => void
-  runtime: Lesson1RuntimeState
-  setRuntime: React.Dispatch<React.SetStateAction<Lesson1RuntimeState>>
-}) {
-  const [trials, setTrials] = useState<readonly MappingPracticeTrial[]>(() =>
-    createMappingPractice(),
-  )
-  const [trialIndex, setTrialIndex] = useState(0)
-  const [feedback, setFeedback] = useState<'idle' | 'retry'>('idle')
-  const [retryCounts, setRetryCounts] = useState<Record<string, number>>({})
-
-  const trial = trials[trialIndex]
-
-  if (trial === undefined) {
-    return (
-      <section className="lesson-card practice-step">
-        <div className="practice-word" lang="uk">
-          Привіт
-        </div>
-        <button className="primary-action" type="button" onClick={onComplete}>
-          Continue
-        </button>
-      </section>
-    )
-  }
-
-  const activeTrial = trial
-  const retryKey = `${activeTrial.mappingId}:${activeTrial.direction}`
-  const rotation = trialIndex % 3
-
-  function record(outcome: 'success' | 'failure') {
-    setRuntime((current) =>
-      recordMappingAttempt(
-        current,
-        activeTrial.mappingId,
-        activeTrial.direction,
-        outcome,
-      ),
-    )
-  }
-
-  function fail() {
-    record('failure')
-    setFeedback('retry')
-    const prior = retryCounts[retryKey] ?? 0
-    if (prior < 1) {
-      setTrials((current) => scheduleAdaptiveRetry(current, activeTrial, prior))
-      setRetryCounts((current) => ({ ...current, [retryKey]: prior + 1 }))
-    }
-  }
-
-  function succeed() {
-    record('success')
-    setFeedback('idle')
-    setTrialIndex((current) => current + 1)
-  }
-
-  const isSoundToPrint = activeTrial.direction === 'sound-to-grapheme'
-
-  return (
-    <section className="lesson-card practice-step">
-      <div className="word-anchor" lang="uk">
-        Привіт
-      </div>
-      {isSoundToPrint ? (
-        <>
-          <AudioControl audioId={activeTrial.promptAudioId!} label="Listen" />
-          <div className="choice-row" role="group" aria-label="Tap">
-            {rotate(activeTrial.graphemeChoices ?? [], rotation).map((choice) => (
-              <button
-                className="grapheme-button"
-                type="button"
-                lang="uk"
-                key={choice}
-                onClick={() =>
-                  choice === activeTrial.correctGrapheme ? succeed() : fail()
-                }
-              >
-                {choice}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="focus-grapheme" lang="uk">
-            {activeTrial.promptGrapheme}
-          </div>
-          <div className="audio-choice-row" role="group" aria-label="Listen">
-            {rotate(activeTrial.audioChoices ?? [], rotation).map((choice, index) => (
-              <AudioControl
-                key={choice}
-                audioId={choice}
-                label="Listen"
-                index={index + 1}
-                onChoose={() =>
-                  choice === activeTrial.correctAudioId ? succeed() : fail()
-                }
-              />
-            ))}
-          </div>
-        </>
-      )}
-      <div className="feedback-row" aria-live="polite">
-        {feedback === 'retry' ? <span>Try again</span> : null}
-      </div>
-      <span className="trial-count" aria-hidden="true">
-        {Math.min(trialIndex + 1, trials.length)} / {trials.length}
-      </span>
-    </section>
-  )
+function remaining(bank: readonly CoreGrapheme[], sequence: readonly CoreGrapheme[]) {
+  return bank.filter((item) => !sequence.includes(item))
 }
 
-function VowelPractice({
-  onComplete,
-  setRuntime,
-}: {
-  onComplete: () => void
-  setRuntime: React.Dispatch<React.SetStateAction<Lesson1RuntimeState>>
-}) {
-  const trials = useMemo(() => createVowelPractice(), [])
-  const [trialIndex, setTrialIndex] = useState(0)
-  const [feedback, setFeedback] = useState<'idle' | 'retry'>('idle')
-  const trial: VowelPracticeTrial | undefined = trials[trialIndex]
-
-  if (trial === undefined) {
-    return (
-      <section className="lesson-card vowel-step">
-        <div className="practice-word" lang="uk">
-          Привіт
-        </div>
-        <button className="primary-action" type="button" onClick={onComplete}>
-          Continue
-        </button>
-      </section>
-    )
-  }
-
-  const activeTrial = trial
-
-  function answer(correct: boolean) {
-    setRuntime((current) =>
-      recordVowelContrastAttempt(
-        current,
-        activeTrial.mappingId === 'y' ? activeTrial.direction : activeTrial.direction,
-        correct ? 'success' : 'failure',
-      ),
-    )
-    if (!correct) {
-      setFeedback('retry')
-      return
-    }
-    setFeedback('idle')
-    setTrialIndex((current) => current + 1)
-  }
-
-  return (
-    <section className="lesson-card vowel-step">
-      <div className="word-anchor" lang="uk">
-        Привіт
-      </div>
-      <div className="vowel-pair" aria-hidden="true">
-        <span lang="uk">и</span>
-        <span lang="uk">і</span>
-      </div>
-      {activeTrial.direction === 'sound-to-grapheme' ? (
-        <>
-          <AudioControl audioId={activeTrial.audioId} label="Listen" />
-          <div className="choice-row" role="group" aria-label="Tap">
-            {(activeTrial.graphemeChoices ?? []).map((choice) => (
-              <button
-                className="grapheme-button"
-                type="button"
-                lang="uk"
-                key={choice}
-                onClick={() => answer(choice === activeTrial.grapheme)}
-              >
-                {choice}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="focus-grapheme" lang="uk">
-            {activeTrial.grapheme}
-          </div>
-          <div className="audio-choice-row" role="group" aria-label="Listen">
-            {(activeTrial.audioChoices ?? []).map((choice, index) => (
-              <AudioControl
-                key={choice}
-                audioId={choice}
-                label="Listen"
-                index={index + 1}
-                onChoose={() => answer(choice === activeTrial.audioId)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-      <div className="feedback-row" aria-live="polite">
-        {feedback === 'retry' ? <span>Try again</span> : null}
-      </div>
-    </section>
-  )
+function prefixIsCorrect(sequence: readonly CoreGrapheme[]) {
+  return sequence.every((item, index) => item === WORD[index])
 }
 
-function BuildRead({
-  onComplete,
-  onUseAccessible,
-  setRuntime,
-}: {
-  onComplete: () => void
-  onUseAccessible: () => void
-  setRuntime: React.Dispatch<React.SetStateAction<Lesson1RuntimeState>>
-}) {
-  const [pass, setPass] = useState(0)
-  const [sequence, setSequence] = useState<AccessibleL9Component[]>([])
-  const [feedback, setFeedback] = useState<'idle' | 'retry' | 'complete'>(
-    'idle',
-  )
-  const [helpOpen, setHelpOpen] = useState(false)
-  const config = BUILD_PASS_CONFIGS[pass] ?? BUILD_PASS_CONFIGS[1]
-  const remaining = TARGET_SEQUENCE.filter((item) => !sequence.includes(item))
-
-  function choose(component: AccessibleL9Component) {
-    const expected = TARGET_SEQUENCE[sequence.length]
-    if (component !== expected) {
-      setFeedback('retry')
-      setRuntime((current) =>
-        recordReconstructionAttempt(current, 'failure', {
-          supportUsed: helpOpen,
-        }),
-      )
-      return
-    }
-
-    const next = [...sequence, component]
-    setSequence(next)
-    setFeedback(next.length === TARGET_SEQUENCE.length ? 'complete' : 'idle')
-  }
-
-  function continueAfterPass() {
-    setRuntime((current) =>
-      recordReconstructionAttempt(current, 'success', {
-        supportUsed: pass === 0 && helpOpen,
-      }),
-    )
-    if (pass === 0) {
-      setPass(1)
-      setSequence([])
-      setFeedback('idle')
-      setHelpOpen(false)
-      return
-    }
-    onComplete()
-  }
-
-  return (
-    <section className="lesson-card build-step">
-      <div className="action-heading">Build</div>
-      <div
-        className="build-slots"
-        aria-label={`${sequence.length} of 6`}
-        aria-live="polite"
-      >
-        {TARGET_SEQUENCE.map((_, index) => (
-          <span className="build-slot" lang="uk" key={index}>
-            {sequence[index] ?? ''}
-          </span>
-        ))}
-      </div>
-      <div className="choice-row" role="group" aria-label="Build">
-        {remaining.map((component) => (
-          <button
-            className="grapheme-button"
-            type="button"
-            lang="uk"
-            key={component}
-            onClick={() => choose(component)}
-          >
-            {component}
-          </button>
-        ))}
-      </div>
-
-      <div className="support-row">
-        <button
-          className="secondary-action"
-          type="button"
-          onClick={() => setHelpOpen((open) => !open)}
-        >
-          Help
-        </button>
-        {config.allowFullTargetReplay && helpOpen ? (
-          <AudioControl audioId="neutralTarget" label="Replay" />
-        ) : null}
-        {config.allowBeginningSupport && helpOpen ? (
-          <AudioControl audioId="beginningPr" label="Listen" />
-        ) : null}
-      </div>
-
-      {helpOpen ? (
-        <div className="help-strip" aria-label="Help">
-          <span lang="uk">и</span>
-          <span lang="uk">і</span>
-          {pass === 0 ? (
-            <>
-              <span lang="uk">П</span>
-              <span lang="uk">р</span>
-            </>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="feedback-row" aria-live="polite">
-        {feedback === 'retry' ? <span>Try again</span> : null}
-        {feedback === 'complete' ? (
-          <button
-            className="primary-action"
-            type="button"
-            onClick={continueAfterPass}
-          >
-            Continue
-          </button>
-        ) : null}
-      </div>
-
-      <button
-        className="text-action nonvisual-route"
-        type="button"
-        onClick={onUseAccessible}
-      >
-        Use nonvisual version
-      </button>
-    </section>
-  )
-}
-
-function VisualL9({
-  onComplete,
-  setRuntime,
-}: {
-  onComplete: () => void
-  setRuntime: React.Dispatch<React.SetStateAction<Lesson1RuntimeState>>
-}) {
-  const options = useMemo(() => rotate(getVisualL9Options(), 1), [])
-  const [feedback, setFeedback] = useState<'idle' | 'retry' | 'success'>(
-    'idle',
-  )
-  const [helpOpen, setHelpOpen] = useState(false)
-
-  function choose(optionId: VisualL9OptionId, correct: boolean) {
-    setRuntime((current) => recordVisualL9Attempt(current, optionId))
-    setFeedback(correct ? 'success' : 'retry')
-  }
-
-  function openHelp() {
-    setHelpOpen(true)
-    setRuntime((current) => recordVisualL9Help(current, false))
-  }
-
-  return (
-    <section className="lesson-card l9-step">
-      <div className="l9-target" lang="uk">
-        Привіт
-      </div>
-      <div className="audio-choice-row l9-options" role="group">
-        {options.map((option, index) => (
-          <AudioControl
-            key={option.id}
-            audioId={option.audioId}
-            label="Listen"
-            index={index + 1}
-            onChoose={() => choose(option.id, option.correct)}
-          />
-        ))}
-      </div>
-      <div className="support-row">
-        <button className="secondary-action" type="button" onClick={openHelp}>
-          Help
-        </button>
-      </div>
-      {helpOpen ? (
-        <div className="help-strip" aria-label="Help">
-          <span lang="uk">и</span>
-          <span lang="uk">і</span>
-          <span lang="uk">П</span>
-          <span lang="uk">р</span>
-        </div>
-      ) : null}
-      <div className="feedback-row" aria-live="polite">
-        {feedback === 'retry' ? <span>Try again</span> : null}
-        {feedback === 'success' ? (
-          <button className="primary-action" type="button" onClick={onComplete}>
-            Continue
-          </button>
-        ) : null}
-      </div>
-    </section>
-  )
-}
-
-function AccessibleL9({
-  runtime,
-  setRuntime,
-  onComplete,
-}: {
-  runtime: Lesson1RuntimeState
-  setRuntime: React.Dispatch<React.SetStateAction<Lesson1RuntimeState>>
-  onComplete: () => void
-}) {
-  const accessible = runtime.l9.accessible
-  const [feedback, setFeedback] = useState<'idle' | 'retry'>('idle')
-  const [helpOpen, setHelpOpen] = useState(false)
-  const [recoveryWordVisible, setRecoveryWordVisible] = useState(false)
-  const [reintegrated, setReintegrated] = useState(false)
-  const choiceGroupRef = useRef<HTMLDivElement>(null)
-  const checkButtonRef = useRef<HTMLButtonElement>(null)
-  const restoreReconstructionFocusRef = useRef(false)
-
-  useEffect(() => {
-    if (!restoreReconstructionFocusRef.current) return
-    restoreReconstructionFocusRef.current = false
-
-    const firstRemainingChoice =
-      choiceGroupRef.current?.querySelector<HTMLButtonElement>(
-        '.grapheme-button',
-      )
-
-    if (firstRemainingChoice) {
-      firstRemainingChoice.focus()
-      return
-    }
-
-    checkButtonRef.current?.focus()
-  }, [
-    accessible.currentSequence.length,
-    accessible.remainingComponents.length,
-  ])
-
-  function choose(component: AccessibleL9Component) {
-    restoreReconstructionFocusRef.current = true
-    setRuntime((current) => selectAccessibleL9Component(current, component))
-    setFeedback('idle')
-  }
-
-  function undo() {
-    setRuntime((current) => undoAccessibleL9Component(current))
-  }
-
-  function openHelp() {
-    setHelpOpen(true)
-    if (!accessible.helpOpened) {
-      setRuntime((current) =>
-        recordAccessibleL9Help(current, 'level-1-neutral-review'),
-      )
-    }
-  }
-
-  function useVowelHelp() {
-    setRuntime((current) =>
-      recordAccessibleL9Help(current, 'level-2-vowel-contrast'),
-    )
-  }
-
-  function useBeginningHelp() {
-    setRuntime((current) =>
-      recordAccessibleL9Help(current, 'level-2-cluster'),
-    )
-  }
-
-  function revealRecovery() {
-    setRuntime((current) =>
-      recordAccessibleL9Help(current, 'level-3-answer-reveal'),
-    )
-    setRecoveryWordVisible(true)
-  }
-
-  function check() {
-    const success = sequenceMatches(
-      accessible.currentSequence,
-      TARGET_SEQUENCE,
-    )
-
-    if (!success) {
-      restoreReconstructionFocusRef.current = true
-    }
-
-    setRuntime((current) => {
-      const submitted = submitAccessibleL9Sequence(current)
-      return success ? recordAccessibleL9Reintegration(submitted) : submitted
-    })
-
-    if (success) {
-      setReintegrated(true)
-      setFeedback('idle')
-      return
-    }
-    setFeedback('retry')
-  }
-
-  if (reintegrated) {
-    return (
-      <section className="lesson-card accessible-l9-step">
-        <div className="l9-target" lang="uk">
-          Привіт
-        </div>
-        <AudioControl audioId="neutralTarget" label="Replay" />
-        <button className="primary-action" type="button" onClick={onComplete}>
-          Continue
-        </button>
-      </section>
-    )
-  }
-
-  if (recoveryWordVisible) {
-    return (
-      <section className="lesson-card accessible-l9-step">
-        <div className="l9-target" lang="uk">
-          Привіт
-        </div>
-        <AudioControl audioId="neutralTarget" label="Replay" />
-        <button
-          className="primary-action"
-          type="button"
-          onClick={() => {
-            setRecoveryWordVisible(false)
-            setHelpOpen(false)
-            setFeedback('idle')
-          }}
-        >
-          Continue
-        </button>
-      </section>
-    )
-  }
-
-  return (
-    <section className="lesson-card accessible-l9-step">
-      <div
-        className="accessible-progress"
-        aria-live="polite"
-        aria-label={`${accessible.currentSequence.length} of 6`}
-      >
-        <span>{accessible.currentSequence.length} of 6</span>
-        <div className="built-sequence" lang="uk">
-          {accessible.currentSequence.join('')}
-        </div>
-      </div>
-      <div
-        className="choice-row"
-        role="group"
-        aria-label="Build"
-        ref={choiceGroupRef}
-      >
-        {accessible.remainingComponents.map((component) => (
-          <button
-            className="grapheme-button"
-            type="button"
-            lang="uk"
-            key={component}
-            onClick={() => choose(component)}
-          >
-            {component}
-          </button>
-        ))}
-      </div>
-      <div className="support-row">
-        <button
-          className="secondary-action"
-          type="button"
-          disabled={accessible.currentSequence.length === 0}
-          onClick={undo}
-        >
-          Undo
-        </button>
-        <button className="secondary-action" type="button" onClick={openHelp}>
-          Help
-        </button>
-        <button
-          className="primary-action compact"
-          type="button"
-          ref={checkButtonRef}
-          disabled={
-            accessible.currentSequence.length !== ACCESSIBLE_L9_COMPONENTS.length
-          }
-          onClick={check}
-        >
-          Check
-        </button>
-      </div>
-
-      {helpOpen ? (
-        <div className="help-actions" aria-label="Help">
-          <button
-            className="help-chip"
-            type="button"
-            lang="uk"
-            onClick={useVowelHelp}
-          >
-            {ACCESSIBLE_L9_HELP_TRIGGERS.vowel.label}
-          </button>
-          <AudioControl
-            audioId={ACCESSIBLE_L9_HELP_TRIGGERS.beginning.audioId}
-            label={ACCESSIBLE_L9_HELP_TRIGGERS.beginning.label}
-            onChoose={useBeginningHelp}
-          />
-          {accessible.submittedSequences.length >= 2 ? (
-            <button
-              className="help-chip"
-              type="button"
-              onClick={revealRecovery}
-            >
-              Help
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="feedback-row" aria-live="polite">
-        {feedback === 'retry' ? <span>Try again</span> : null}
-      </div>
-    </section>
-  )
+function viewProgress(view: View) {
+  if (view.kind === 'encounter') return 1
+  if (view.kind.startsWith('mapping')) return 2
+  if (view.kind.startsWith('vowel')) return 3
+  if (view.kind === 'supported-build' || view.kind === 'reduced-build') return 4
+  if (view.kind === 'context-return') return 5
+  return 6
 }
 
 export function Lesson1() {
-  const [step, setStep] = useState(0)
-  const [runtime, setRuntime] = useState(() => createInitialLesson1State())
-  const [preferAccessible, setPreferAccessible] = useState(false)
-  const [finished, setFinished] = useState(false)
+  const [view, setView] = useState<View>({ kind: 'encounter' })
+  const [history, setHistory] = useState<View[]>([])
+  const [feedback, setFeedback] = useState<'idle' | 'correct' | 'retry'>('idle')
+  const [supportedSequence, setSupportedSequence] = useState<CoreGrapheme[]>([])
+  const [reducedSequence, setReducedSequence] = useState<CoreGrapheme[]>([])
+  const [supportedHelp, setSupportedHelp] = useState(false)
+  const [reducedHelp, setReducedHelp] = useState(false)
+  const [vowelHelp, setVowelHelp] = useState(false)
+  const [contextHelp, setContextHelp] = useState(false)
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
-  function advance() {
-    setStep((current) => Math.min(current + 1, 7))
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [view])
+
+  function navigate(next: View) {
+    setHistory((current) => [...current, view])
+    setView(next)
+    setFeedback('idle')
   }
 
-  function enterL9() {
-    const route = preferAccessible ? 'accessible' : 'visual'
-    setRuntime((current) => selectL9Route(current, route))
-    setStep(5)
-  }
-
-  function completeSemanticChoice() {
-    setRuntime((current) => recordSemanticReconnection(current, 'success'))
-    setStep(7)
-  }
-
-  function finishLesson() {
-    setRuntime((current) => {
-      let next = current
-      while (!next.lessonCompleted) {
-        next = completeCurrentEpisode(next)
-      }
-      return next
+  function back() {
+    setHistory((current) => {
+      const previous = current.at(-1)
+      if (!previous) return current
+      setView(previous)
+      setFeedback('idle')
+      return current.slice(0, -1)
     })
-    setFinished(true)
   }
+
+  function mappingSuccess(index: number, lowercase = false) {
+    setFeedback('correct')
+    window.setTimeout(() => {
+      setFeedback('idle')
+      if (index === 0 && !lowercase) {
+        navigate({ kind: 'mapping-guided', index: 0, lowercase: true })
+      } else if (index === 0 && lowercase) {
+        navigate({ kind: 'mapping-retrieve-p' })
+      } else if (index < MAPPINGS.length - 1) {
+        navigate({ kind: 'mapping-teach', index: index + 1 })
+      } else {
+        navigate({ kind: 'vowel-compare' })
+      }
+    }, 280)
+  }
+
+  function renderFeedback() {
+    return (
+      <div className="feedback" aria-live="polite">
+        {feedback === 'correct' ? <span className="feedback-good">✓ Yes.</span> : null}
+        {feedback === 'retry' ? <span>Not yet. Try again.</span> : null}
+      </div>
+    )
+  }
+
+  const progress = viewProgress(view)
 
   return (
     <main className="lesson-shell">
-      <div className="lesson-topbar">
-        <div className="yuzu-mark" aria-label="Yuzu">
-          <span className="yuzu-leaf" aria-hidden="true" />
-          Yuzu
+      <header className="lesson-topbar">
+        <div className="topbar-row">
+          {history.length > 0 ? (
+            <button type="button" className="back-button" onClick={back} aria-label="Back">
+              <span aria-hidden="true">←</span> Back
+            </button>
+          ) : <span />}
+          <div className="lesson-identity">Lesson 1 · First greeting</div>
         </div>
-        <Progress step={step} />
-      </div>
+        <div className="progress-track" aria-label={`Lesson progress: ${progress} of 6`}>
+          <span style={{ width: `${(progress / 6) * 100}%` }} />
+        </div>
+      </header>
 
       <div className="lesson-stage">
-        {step === 0 ? (
-          <section className="lesson-card encounter-step">
-            <SceneArt kind="greeting" moment="beginning" />
-            <div className="hero-word" lang="uk">
-              Привіт
+        {view.kind === 'encounter' ? (
+          <section className="lesson-card encounter-card" data-view="encounter">
+            <p className="eyebrow">A first Ukrainian greeting</p>
+            <h1 ref={headingRef} tabIndex={-1} className="hero-word" lang="uk">Привіт</h1>
+            <div className="anchor-media">
+              <img
+                src="/media/lesson1/L1-01_anchor_greeting.webp"
+                alt="Two familiar people meet. One smiles and raises a hand while speaking to the other."
+              />
             </div>
-            <AudioControl audioId="contextualTarget" label="Replay" />
-            <button className="primary-action" type="button" onClick={advance}>
+            <AudioButton audioId="contextualTarget" label="Listen" />
+            <button type="button" className="primary-button" onClick={() => navigate({ kind: 'mapping-teach', index: 0 })}>
               Continue
             </button>
           </section>
         ) : null}
 
-        {step === 1 ? (
-          <ContextChoice
-            kind="courtyard"
-            options={COURTYARD_OPTIONS}
-            onComplete={advance}
-          />
-        ) : null}
-
-        {step === 2 ? (
-          <MappingPractice
-            runtime={runtime}
-            setRuntime={setRuntime}
-            onComplete={advance}
-          />
-        ) : null}
-
-        {step === 3 ? (
-          <VowelPractice setRuntime={setRuntime} onComplete={advance} />
-        ) : null}
-
-        {step === 4 ? (
-          <BuildRead
-            setRuntime={setRuntime}
-            onUseAccessible={() => setPreferAccessible(true)}
-            onComplete={enterL9}
-          />
-        ) : null}
-
-        {step === 5 && runtime.l9.route === 'visual' ? (
-          <VisualL9 setRuntime={setRuntime} onComplete={advance} />
-        ) : null}
-
-        {step === 5 && runtime.l9.route === 'accessible' ? (
-          <AccessibleL9
-            runtime={runtime}
-            setRuntime={setRuntime}
-            onComplete={advance}
-          />
-        ) : null}
-
-        {step === 6 ? (
-          <ContextChoice
-            kind="park"
-            options={PARK_OPTIONS}
-            onComplete={completeSemanticChoice}
-          />
-        ) : null}
-
-        {step === 7 ? (
-          <section className="lesson-card completion-step">
-            <div
-              className={finished ? 'completion-orb is-complete' : 'completion-orb'}
-              aria-hidden="true"
-            >
-              {finished ? '✓' : '8'}
-            </div>
-            <div className="completion-word" lang="uk">
-              Привіт
-            </div>
-            {finished ? null : (
-              <button
-                className="primary-action"
-                type="button"
-                onClick={finishLesson}
-              >
-                Finish
+        {view.kind === 'mapping-teach' ? (() => {
+          const mapping = MAPPINGS[view.index]!
+          return (
+            <section className="lesson-card" data-view="mapping-teach">
+              <p className="eyebrow">Hear it inside the word</p>
+              <h1 ref={headingRef} tabIndex={-1}>Listen to this sound</h1>
+              <FocusWord focus={mapping.grapheme} />
+              {view.index === 0 ? (
+                <div className="case-pair" aria-label="Uppercase and lowercase forms" lang="uk">
+                  <span>П</span><span>п</span>
+                </div>
+              ) : null}
+              <AudioButton audioId={mapping.audio} label="Listen" />
+              <button type="button" className="primary-button" onClick={() => navigate({ kind: 'mapping-guided', index: view.index })}>
+                Try it
               </button>
-            )}
+            </section>
+          )
+        })() : null}
+
+        {view.kind === 'mapping-guided' ? (() => {
+          const mapping = MAPPINGS[view.index]!
+          const isLower = view.lowercase === true
+          const choices: readonly Grapheme[] = isLower ? ['п', 'т', 'в'] : mapping.guidedChoices
+          const correct: Grapheme = isLower ? 'п' : mapping.grapheme
+          return (
+            <section className="lesson-card" data-view="mapping-guided">
+              <p className="eyebrow">Use the sound you just heard</p>
+              <h1 ref={headingRef} tabIndex={-1}>Tap the letter you hear</h1>
+              <AudioButton audioId={mapping.audio} label="Listen" />
+              <div className="grapheme-bank" role="group" aria-label="Letter choices">
+                {choices.map((choice) => (
+                  <button
+                    type="button"
+                    className="grapheme-button"
+                    lang="uk"
+                    key={choice}
+                    onClick={() => choice === correct ? mappingSuccess(view.index, isLower) : setFeedback('retry')}
+                  >
+                    {choice}
+                  </button>
+                ))}
+              </div>
+              {renderFeedback()}
+              <details className="local-help">
+                <summary>Help</summary>
+                <div className="help-content">
+                  <AudioButton audioId={mapping.audio} label="Hear it again" compact />
+                </div>
+              </details>
+            </section>
+          )
+        })() : null}
+
+        {view.kind === 'mapping-retrieve-p' ? (
+          <section className="lesson-card" data-view="mapping-retrieve">
+            <p className="eyebrow">One more way</p>
+            <h1 ref={headingRef} tabIndex={-1}>Choose the sound for <span lang="uk">П</span></h1>
+            <div className="audio-choice-list" role="group" aria-label="Sound choices">
+              <AudioChoiceRow audioId="t" label="Sound A" onChoose={() => setFeedback('retry')} />
+              <AudioChoiceRow audioId="p" label="Sound B" onChoose={() => {
+                setFeedback('correct')
+                window.setTimeout(() => navigate({ kind: 'mapping-teach', index: 1 }), 280)
+              }} />
+            </div>
+            {renderFeedback()}
+            <details className="local-help">
+              <summary>Help</summary>
+              <div className="help-content">
+                <FocusWord focus="П" />
+                <AudioButton audioId="p" label="Hear it again" compact />
+              </div>
+            </details>
+          </section>
+        ) : null}
+
+        {view.kind === 'vowel-compare' ? (
+          <section className="lesson-card" data-view="vowel-compare">
+            <p className="eyebrow">Two sounds in <span lang="uk">Привіт</span></p>
+            <h1 ref={headingRef} tabIndex={-1}>Listen and compare</h1>
+            <div className="vowel-compare">
+              <div className="vowel-card">
+                <span lang="uk">и</span>
+                <AudioButton audioId="y" label="Listen" compact />
+              </div>
+              <div className="vowel-card">
+                <span lang="uk">і</span>
+                <AudioButton audioId="i" label="Listen" compact />
+              </div>
+            </div>
+            <button type="button" className="primary-button" onClick={() => navigate({ kind: 'vowel-trial', index: 0 })}>
+              Try it
+            </button>
+          </section>
+        ) : null}
+
+        {view.kind === 'vowel-trial' ? (() => {
+          const trial = VOWEL_TRIALS[view.index]!
+          const next = () => {
+            setFeedback('correct')
+            window.setTimeout(() => {
+              if (view.index < VOWEL_TRIALS.length - 1) {
+                navigate({ kind: 'vowel-trial', index: view.index + 1 })
+              } else {
+                navigate({ kind: 'supported-build' })
+              }
+            }, 280)
+          }
+          return (
+            <section className="lesson-card" data-view="vowel-trial">
+              <p className="eyebrow">Compare <span lang="uk">и</span> and <span lang="uk">і</span></p>
+              <h1 ref={headingRef} tabIndex={-1}>
+                {trial.direction === 'sound-print' ? 'Tap the letter you hear' : <>Choose the sound for <span lang="uk">{trial.grapheme}</span></>}
+              </h1>
+              {trial.direction === 'sound-print' ? (
+                <>
+                  <AudioButton audioId={trial.audio} label="Listen" />
+                  <div className="grapheme-bank" role="group" aria-label="Vowel choices">
+                    {(['и', 'і'] as const).map((choice) => (
+                      <button
+                        type="button"
+                        className="grapheme-button"
+                        lang="uk"
+                        key={choice}
+                        onClick={() => choice === trial.grapheme ? next() : setFeedback('retry')}
+                      >
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="audio-choice-list" role="group" aria-label="Sound choices">
+                  <AudioChoiceRow audioId={trial.grapheme === 'и' ? 'i' : 'y'} label="Sound A" onChoose={() => setFeedback('retry')} />
+                  <AudioChoiceRow audioId={trial.audio} label="Sound B" onChoose={next} />
+                </div>
+              )}
+              {renderFeedback()}
+              <div className="help-toggle">
+                <button type="button" className="text-button" onClick={() => setVowelHelp((open) => !open)}>
+                  {vowelHelp ? 'Close help' : 'Help'}
+                </button>
+                {vowelHelp ? (
+                  <div className="compact-help" aria-label="Compare again">
+                    <span>Compare again</span>
+                    <AudioButton audioId="y" label="и" compact />
+                    <AudioButton audioId="i" label="і" compact />
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          )
+        })() : null}
+
+        {view.kind === 'supported-build' ? (
+          <section className="lesson-card" data-view="supported-build">
+            <p className="eyebrow">Put it together</p>
+            <h1 ref={headingRef} tabIndex={-1}>Build the word</h1>
+            <FocusWord />
+            <AudioButton audioId="neutralTarget" label="Listen" compact />
+            <div className="build-line" aria-label={`${supportedSequence.length} of 6 letters placed`}>
+              {WORD.map((_, index) => <span key={index} lang="uk">{supportedSequence[index] ?? ''}</span>)}
+            </div>
+            <div className="grapheme-bank" role="group" aria-label="Build the word">
+              {remaining(SUPPORTED_BANK, supportedSequence).map((choice) => (
+                <button
+                  className="grapheme-button"
+                  type="button"
+                  lang="uk"
+                  key={choice}
+                  onClick={() => {
+                    if (choice !== WORD[supportedSequence.length]) {
+                      setFeedback('retry')
+                      return
+                    }
+                    setSupportedSequence((current) => [...current, choice])
+                    setFeedback('correct')
+                  }}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+            {renderFeedback()}
+            <div className="help-toggle">
+              <button type="button" className="text-button" onClick={() => setSupportedHelp((open) => !open)}>
+                {supportedHelp ? 'Close help' : 'Help'}
+              </button>
+              {supportedHelp && supportedSequence.length < WORD.length ? (
+                <div className="compact-help">
+                  <AudioButton audioId={AUDIO_FOR[WORD[supportedSequence.length]!]} label="Hear the next sound" compact />
+                </div>
+              ) : null}
+            </div>
+            {supportedSequence.length === WORD.length ? (
+              <button type="button" className="primary-button" onClick={() => navigate({ kind: 'reduced-build' })}>
+                Continue
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        {view.kind === 'reduced-build' ? (
+          <section className="lesson-card" data-view="reduced-build">
+            <p className="eyebrow">Now with less support</p>
+            <h1 ref={headingRef} tabIndex={-1}>Build it again</h1>
+            <div className="build-line" aria-label={`${reducedSequence.length} of 6 letters placed`}>
+              {WORD.map((_, index) => <span key={index} lang="uk">{reducedSequence[index] ?? ''}</span>)}
+            </div>
+            <div className="grapheme-bank" role="group" aria-label="Build the word">
+              {remaining(REDUCED_BANK, reducedSequence).map((choice) => (
+                <button
+                  className="grapheme-button"
+                  type="button"
+                  lang="uk"
+                  key={choice}
+                  onClick={() => {
+                    setReducedSequence((current) => [...current, choice])
+                    setFeedback('idle')
+                  }}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+            <div className="build-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={reducedSequence.length === 0}
+                onClick={() => setReducedSequence((current) => current.slice(0, -1))}
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                className="primary-button is-compact"
+                disabled={reducedSequence.length !== WORD.length}
+                onClick={() => {
+                  const correct = reducedSequence.every((item, index) => item === WORD[index])
+                  setFeedback(correct ? 'correct' : 'retry')
+                }}
+              >
+                Check
+              </button>
+            </div>
+            {renderFeedback()}
+            {feedback === 'retry' ? (
+              <button type="button" className="secondary-button" onClick={() => {
+                setReducedSequence([])
+                setFeedback('idle')
+              }}>
+                Try again
+              </button>
+            ) : null}
+            <div className="help-toggle">
+              <button type="button" className="text-button" onClick={() => setReducedHelp((open) => !open)}>
+                {reducedHelp ? 'Close help' : 'Help'}
+              </button>
+              {reducedHelp ? (
+                <div className="compact-help">
+                  {prefixIsCorrect(reducedSequence) && reducedSequence.length < WORD.length ? (
+                    <AudioButton audioId={AUDIO_FOR[WORD[reducedSequence.length]!]} label="Hear the next sound" compact />
+                  ) : (
+                    <span>Undo the last letter and listen from there.</span>
+                  )}
+                </div>
+              ) : null}
+            </div>
+            {feedback === 'correct' ? (
+              <button type="button" className="primary-button" onClick={() => navigate({ kind: 'context-return' })}>
+                Continue
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        {view.kind === 'context-return' ? (
+          <section className="lesson-card context-card" data-view="context-return">
+            <p className="eyebrow">A new moment</p>
+            <h1 ref={headingRef} tabIndex={-1}>Read. Choose the greeting moment.</h1>
+            <div className="context-target" lang="uk">Привіт</div>
+            <div className="context-grid" role="group" aria-label="Choose the greeting moment">
+              {CONTEXTS.map((_, index) => (
+                <ContextTile
+                  index={index}
+                  key={index}
+                  onChoose={() => setFeedback(index === 1 ? 'correct' : 'retry')}
+                />
+              ))}
+            </div>
+            {renderFeedback()}
+            <div className="help-toggle">
+              <button type="button" className="text-button" onClick={() => setContextHelp((open) => !open)}>
+                {contextHelp ? 'Close help' : 'Help'}
+              </button>
+              {contextHelp ? (
+                <div className="compact-help">
+                  <AudioButton audioId="neutralTarget" label="Hear the word" compact />
+                </div>
+              ) : null}
+            </div>
+            {feedback === 'correct' ? (
+              <button type="button" className="primary-button" onClick={() => navigate({ kind: 'complete' })}>
+                Continue
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        {view.kind === 'complete' ? (
+          <section className="lesson-card completion-card" data-view="complete">
+            <div className="completion-mark" aria-hidden="true">✓</div>
+            <p className="eyebrow">Lesson complete</p>
+            <h1 ref={headingRef} tabIndex={-1} className="completion-word" lang="uk">Привіт</h1>
+            <p className="completion-lead">You worked with one Ukrainian greeting from meaning to print.</p>
+            <div className="completion-recap" aria-label="What you worked with">
+              <span>Heard it in a greeting</span>
+              <span>Connected sounds and letters</span>
+              <span>Built and read the word</span>
+            </div>
+            <button type="button" className="primary-button">Finish lesson</button>
           </section>
         ) : null}
       </div>
