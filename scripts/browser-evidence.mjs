@@ -202,7 +202,7 @@ evidence.media.anchorNaturalSize = await evaluate("({ width: document.querySelec
 await screenshot('01-contextual-encounter.png')
 evidence.screenshots.push('01-contextual-encounter.png')
 await clickAudio('audio/contextual-target')
-await assertBrowser("document.querySelector('[data-view="encounter"]') !== null", 'Listen/Replay never submits or navigates')
+await assertBrowser(`document.querySelector('[data-view="encounter"]') !== null`, 'Listen/Replay never submits or navigates')
 await clickViewButton('encounter', 'Continue')
 await waitForView('mapping-teach')
 
@@ -236,12 +236,12 @@ evidence.screenshots.push('04-mapping-retrieval-p.png')
 // Listening to answer alternatives must not submit.
 await clickAudio('audio/component-t')
 await assertBrowser(
-  "!document.querySelector('[data-view="mapping-retrieve"] .feedback').textContent.includes('Try again')",
+  `!document.querySelector('[data-view="mapping-retrieve"] .feedback').textContent.includes('Try again')`,
   'playing an audio alternative does not submit an answer',
 )
 await clickAudio('audio/component-p')
 await assertBrowser(
-  "document.querySelector('[data-view="mapping-retrieve"]') !== null",
+  `document.querySelector('[data-view="mapping-retrieve"]') !== null`,
   'playing the correct audio still does not submit',
 )
 await chooseSecondSoundOption()
@@ -270,10 +270,10 @@ for (let trial = 0; trial < 4; trial += 1) {
     await clickAudio('audio/component-i')
     await clickGrapheme('vowel-trial', 'і')
   } else {
-    const before = await evaluate("document.querySelector('[data-view="vowel-trial"] .feedback').textContent")
-    const audioIds = await evaluate("[...document.querySelectorAll('[data-view="vowel-trial"] .sound-option [data-audio-id]')].map((el) => el.dataset.audioId)")
+    const before = await evaluate(`document.querySelector('[data-view="vowel-trial"] .feedback').textContent`)
+    const audioIds = await evaluate(`[...document.querySelectorAll('[data-view="vowel-trial"] .sound-option [data-audio-id]')].map((el) => el.dataset.audioId)`)
     for (const id of audioIds) await clickAudio(id)
-    const after = await evaluate("document.querySelector('[data-view="vowel-trial"] .feedback').textContent")
+    const after = await evaluate(`document.querySelector('[data-view="vowel-trial"] .feedback').textContent`)
     if (before !== after) throw new Error('Listening changed vowel correctness state before Choose')
     await chooseSecondSoundOption()
   }
@@ -288,7 +288,7 @@ await screenshot('06-supported-build.png')
 evidence.screenshots.push('06-supported-build.png')
 await clickViewButton('supported-build', 'Help')
 await assertBrowser(
-  "document.querySelector('[data-view="supported-build"] .compact-help')?.getBoundingClientRect().height < 120",
+  `document.querySelector('[data-view="supported-build"] .compact-help')?.getBoundingClientRect().height < 120`,
   'Build Help stays compact and local',
 )
 await screenshot('07-supported-build-help.png')
@@ -299,20 +299,20 @@ await waitForView('reduced-build')
 
 // Reduced Build must preserve progress through Back and materially remove target/per-placement support.
 await assertBrowser(
-  "!document.querySelector('[data-view="reduced-build"] .focus-word') && !document.querySelector('[data-view="reduced-build"] [data-audio-id="audio/neutral-target"]')",
+  `!document.querySelector('[data-view="reduced-build"] .focus-word') && !document.querySelector('[data-view="reduced-build"] [data-audio-id="audio/neutral-target"]')`,
   'reduced Build removes full target and target audio',
 )
 await clickGrapheme('reduced-build', 'П')
 await clickButton('Back')
 await waitForView('supported-build')
 await assertBrowser(
-  "document.querySelector('[data-view="supported-build"] .build-line')?.textContent.replace(/\\s/g, '') === 'Привіт'",
+  `document.querySelector('[data-view="supported-build"] .build-line')?.textContent.replace(/\\s/g, '') === 'Привіт'`,
   'Back preserves completed supported Build',
 )
 await clickViewButton('supported-build', 'Continue')
 await waitForView('reduced-build')
 await assertBrowser(
-  "document.querySelector('[data-view="reduced-build"] .build-line')?.textContent.replace(/\\s/g, '').startsWith('П')",
+  `document.querySelector('[data-view="reduced-build"] .build-line')?.textContent.replace(/\\s/g, '').startsWith('П')`,
   'returning to reduced Build preserves its partial sequence',
 )
 evidence.navigation.backPreservesBuildProgress = true
@@ -322,7 +322,7 @@ evidence.screenshots.push('08-reduced-build.png')
 for (const grapheme of WORD.slice(1)) await clickGrapheme('reduced-build', grapheme)
 await clickViewButton('reduced-build', 'Check')
 await waitForExpression(
-  "document.querySelector('[data-view="reduced-build"] .feedback')?.textContent.includes('Yes')",
+  `document.querySelector('[data-view="reduced-build"] .feedback')?.textContent.includes('Yes')`,
   'reduced Build full-sequence success',
 )
 evidence.build.supportedThenReduced = true
@@ -332,11 +332,11 @@ await waitForView('context-return')
 
 // Candidate final evidence: fresh context + print, no target audio until Help.
 await assertBrowser(
-  "document.querySelector('[data-view="context-return"] [data-audio-id="audio/neutral-target"]') === null",
+  `document.querySelector('[data-view="context-return"] [data-audio-id="audio/neutral-target"]') === null`,
   'final evidence does not expose target audio before Help',
 )
 await assertBrowser(
-  "document.querySelector('[data-view="context-return"] .context-target')?.textContent.trim() === 'Привіт'",
+  `document.querySelector('[data-view="context-return"] .context-target')?.textContent.trim() === 'Привіт'`,
   'final evidence uses full taught print',
 )
 await assertBrowser(
@@ -350,7 +350,7 @@ evidence.screenshots.push('09-final-fresh-context.png')
 
 await clickExpression("document.querySelectorAll('.context-tile')[1]", '094 greeting moment')
 await waitForExpression(
-  "document.querySelector('[data-view="context-return"] .feedback')?.textContent.includes('Yes')",
+  `document.querySelector('[data-view="context-return"] .feedback')?.textContent.includes('Yes')`,
   'fresh-context correct feedback',
 )
 await clickViewButton('context-return', 'Continue')
@@ -362,11 +362,11 @@ evidence.finalEvidence.uses094Media = true
 await screenshot('10-completion.png')
 evidence.screenshots.push('10-completion.png')
 await assertBrowser(
-  "document.querySelector('[data-view="complete"]')?.innerText.includes('Lesson complete') && document.querySelector('[data-view="complete"]')?.innerText.includes('Привіт')",
+  `document.querySelector('[data-view="complete"]')?.innerText.includes('Lesson complete') && document.querySelector('[data-view="complete"]')?.innerText.includes('Привіт')`,
   'completion creates a clear Lesson boundary around the taught target',
 )
 await assertBrowser(
-  "!/master|A1|fluent|general reading/i.test(document.querySelector('[data-view="complete"]')?.innerText ?? '')",
+  `!/master|A1|fluent|general reading/i.test(document.querySelector('[data-view="complete"]')?.innerText ?? '')`,
   'completion avoids unsupported mastery/A1/general-reading claims',
 )
 evidence.completion.clearClosure = true
