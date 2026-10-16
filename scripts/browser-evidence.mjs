@@ -101,6 +101,33 @@ async function clickGrapheme(view, grapheme) {
   )
 }
 
+async function keyActivateExpression(expression, key = 'Enter') {
+  const focused = await evaluate(
+    "(() => { const target = " + expression +
+      "; if (!target || target.disabled) return false; target.focus(); return document.activeElement === target })()",
+  )
+  if (!focused) throw new Error('Could not focus keyboard target')
+
+  const code = key === ' ' ? 'Space' : key
+  const virtualKeyCode = key === ' ' ? 32 : 13
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyDown',
+    key,
+    code,
+    text: key === ' ' ? ' ' : undefined,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key,
+    code,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
+  })
+  await sleep(80)
+}
+
 async function assertBrowser(condition, message) {
   const passed = await evaluate(condition)
   if (!passed) throw new Error(`Browser assertion failed: ${message}`)
@@ -169,6 +196,7 @@ async function runMapping(index, grapheme, audioId) {
 
 await send('Page.enable')
 await send('Runtime.enable')
+await send('Network.enable')
 await send('Emulation.setDeviceMetricsOverride', {
   width: 1180,
   height: 860,
@@ -176,14 +204,21 @@ await send('Emulation.setDeviceMetricsOverride', {
   mobile: false,
 })
 
+await send('Network.setBlockedURLs', { urls: ['*1.m4a*'] })
 await send('Page.navigate', { url: APP_URL })
 await waitForExpression("document.readyState === 'complete'", 'page load')
+await evaluate(
+  "localStorage.removeItem('yuzu.work096.lesson1.slice.v1'); location.reload()",
+)
 await waitForView('encounter')
 
 const evidence = {
   work: 'WORK-YUZU-096',
   media: {},
   interaction: {},
+  technicalRecovery: {},
+  persistence: {},
+  accessibility: {},
   mapping: {},
   vowels: {},
   build: {},
@@ -198,19 +233,104 @@ await assertBrowser(
   "document.querySelector('.anchor-media img')?.complete && document.querySelector('.anchor-media img')?.naturalWidth > 0",
   '094 anchor greeting media loads as an actual image',
 )
-evidence.media.anchorNaturalSize = await evaluate("({ width: document.querySelector('.anchor-media img').naturalWidth, height: document.querySelector('.anchor-media img').naturalHeight })")
+evidence.media.anchorNaturalSize = await evaluate(
+  "({ width: document.querySelector('.anchor-media img').naturalWidth, height: document.querySelector('.anchor-media img').naturalHeight })",
+)
 await screenshot('01-contextual-encounter.png')
 evidence.screenshots.push('01-contextual-encounter.png')
-await clickAudio('audio/contextual-target')
-await assertBrowser(`document.querySelector('[data-view="encounter"]') !== null`, 'Listen/Replay never submits or navigates')
-await clickViewButton('encounter', 'Continue')
-await waitForView('mapping-teach')
 
-// Safe Back at the first boundary.
-await clickExpression(`document.querySelector('[aria-label="Back"]')`, 'Back')
-await waitForView('encounter')
-await clickViewButton('encounter', 'Continue')
+// Technical audio failure is isolated from learner performance.
+await clickExpression(
+  "[...document.querySelectorAll('[data-audio-id]')].find((item) => item.dataset.audioId === 'audio/contextual-target')",
+  'contextual Listen',
+)
+await waitForExpression(
+  "document.querySelector('.technical-error')?.textContent.includes('Audio couldn’t play.')",
+  'inline technical audio failure',
+  240,
+)
+await assertBrowser(
+  "document.querySelector('.technical-error')?.textContent.includes('Retry audio') === true && document.querySelector('.technical-error')?.textContent.includes('Reload step') === true",
+  'technical recovery exposes Retry audio and Reload step',
+)
+await assertBrowser(
+  "!document.querySelector('.feedback')?.textContent.match(/Not yet|Try again/)",
+  'technical failure does not create learner-performance feedback',
+)
+await assertBrowser(
+  "Object.keys(JSON.parse(localStorage.getItem('yuzu.work096.lesson1.slice.v1') ?? '{}').evidenceLedger ?? {}).length === 0",
+  'technical failure does not create attempt/help provenance',
+)
+await screenshot('02-technical-audio-recovery.png')
+evidence.screenshots.push('02-technical-audio-recovery.png')
+await send('Network.setBlockedURLs', { urls: [] })
+await clickButton('Retry audio', '.technical-error button')
+await waitForExpression(
+  "(() => { const media = [...document.querySelectorAll('[data-audio-media-id]')].find((item) => item.dataset.audioMediaId === 'audio/contextual-target'); return media?.ended === true })()",
+  'audio retry completes real playback',
+  480,
+)
+await waitForExpression(
+  "document.activeElement?.dataset.audioId === 'audio/contextual-target'",
+  'audio retry focus restoration',
+)
+evidence.technicalRecovery.inlineSeparateFromPerformance = true
+evidence.technicalRecovery.retryAndReloadAvailable = true
+evidence.technicalRecovery.retryRestoresAudioFocus = true
+
+// Replay remains non-submitting.
+await clickAudio('audio/contextual-target')
+await assertBrowser(
+  "document.querySelector('[data-view=encounter]') !== null",
+  'Listen/Replay never submits or navigates',
+)
+evidence.interaction.playReplayNeverSubmits = true
+
+// Keyboard/focus: Tab reaches visible Continue and Space advances.
+await send('Input.dispatchKeyEvent', {
+  type: 'keyDown',
+  key: 'Tab',
+  code: 'Tab',
+  windowsVirtualKeyCode: 9,
+  nativeVirtualKeyCode: 9,
+})
+await send('Input.dispatchKeyEvent', {
+  type: 'keyUp',
+  key: 'Tab',
+  code: 'Tab',
+  windowsVirtualKeyCode: 9,
+  nativeVirtualKeyCode: 9,
+})
+await waitForExpression(
+  "document.activeElement?.textContent?.trim() === 'Continue'",
+  'keyboard Tab reaches Continue',
+)
+await assertBrowser(
+  "parseFloat(getComputedStyle(document.activeElement).outlineWidth) >= 3",
+  'keyboard-focused Continue has a visible focus outline',
+)
+await keyActivateExpression("document.activeElement", ' ')
 await waitForView('mapping-teach')
+evidence.accessibility.keyboardActivation = true
+evidence.accessibility.visibleFocus = true
+
+// Reload and browser history preserve the exact learner experience.
+await waitForExpression(
+  "JSON.parse(localStorage.getItem('yuzu.work096.lesson1.slice.v1') ?? '{}').view?.kind === 'mapping-teach'",
+  'mapping state persisted',
+)
+await evaluate('location.reload()')
+await waitForView('mapping-teach')
+evidence.persistence.reloadPreservesCurrentExperience = true
+await evaluate('history.back()')
+await waitForView('encounter')
+await evaluate('history.forward()')
+await waitForView('mapping-teach')
+await waitForExpression(
+  "document.activeElement === document.querySelector('[data-view=mapping-teach] h1')",
+  'browser history restoration focus',
+)
+evidence.navigation.browserHistoryBackForwardSafe = true
 evidence.navigation.backReturnsToPreviousLearnerState = true
 
 // Complete П/п teach -> guided -> reciprocal retrieval path.
@@ -222,7 +342,10 @@ await waitForView('mapping-guided')
 await screenshot('03-mapping-guided-p.png')
 evidence.screenshots.push('03-mapping-guided-p.png')
 await clickAudio('audio/component-p')
-await clickGrapheme('mapping-guided', 'П')
+await keyActivateExpression(
+  "[...document.querySelectorAll('[data-view=mapping-guided] .grapheme-button')].find((el) => el.textContent.trim() === 'П')",
+  ' ',
+)
 await sleep(380)
 await waitForView('mapping-guided')
 await assertBrowser("document.body.innerText.includes('п')", 'lowercase п receives guided practice without a separate alphabet lesson')
@@ -247,7 +370,6 @@ await assertBrowser(
 await chooseSecondSoundOption()
 await sleep(380)
 evidence.mapping.completePPath = true
-evidence.interaction.playReplayNeverSubmits = true
 
 // Establish remaining consonant mappings enough for Build.
 await runMapping(1, 'р', 'r')
@@ -283,36 +405,68 @@ await waitForView('supported-build')
 evidence.vowels.compareAndReplay = true
 evidence.vowels.guidedAndReciprocalPractice = true
 
-// Supported Build: compact local Help.
+// Supported Build: compact local Help + preserved response/support provenance.
+await assertBrowser(
+  "document.querySelector('[data-view=supported-build] .focus-word') !== null && [...document.querySelectorAll('[data-view=supported-build] [data-audio-id]')].some((item) => item.dataset.audioId === 'audio/neutral-target')",
+  'supported Build visibly provides target reference and target audio',
+)
 await screenshot('06-supported-build.png')
 evidence.screenshots.push('06-supported-build.png')
 await clickViewButton('supported-build', 'Help')
 await assertBrowser(
-  `document.querySelector('[data-view="supported-build"] .compact-help')?.getBoundingClientRect().height < 120`,
+  "document.querySelector('[data-view=supported-build] .compact-help')?.getBoundingClientRect().height < 120",
   'Build Help stays compact and local',
 )
+await waitForExpression(
+  "JSON.parse(localStorage.getItem('yuzu.work096.lesson1.slice.v1') ?? '{}').evidenceLedger?.['supported-build']?.supportUsed === true",
+  'supported Build Help provenance persisted',
+)
+await clickAudio('audio/component-p')
 await screenshot('07-supported-build-help.png')
 evidence.screenshots.push('07-supported-build-help.png')
+
+// One deliberate wrong placement proves attempts/responses are not silently erased.
+await clickGrapheme('supported-build', 'в')
+await assertBrowser(
+  "document.querySelector('[data-view=supported-build] .build-line')?.textContent.trim() === ''",
+  'supported wrong placement does not mutate the built sequence',
+)
 for (const grapheme of WORD) await clickGrapheme('supported-build', grapheme)
 await clickViewButton('supported-build', 'Continue')
 await waitForView('reduced-build')
 
-// Reduced Build must preserve progress through Back and materially remove target/per-placement support.
+// Reduced Build removes the full target/audio and gives no per-placement correctness.
 await assertBrowser(
-  `!document.querySelector('[data-view="reduced-build"] .focus-word') && !document.querySelector('[data-view="reduced-build"] [data-audio-id="audio/neutral-target"]')`,
+  "!document.querySelector('[data-view=reduced-build] .focus-word') && ![...document.querySelectorAll('[data-view=reduced-build] [data-audio-id]')].some((item) => item.dataset.audioId === 'audio/neutral-target')",
   'reduced Build removes full target and target audio',
 )
 await clickGrapheme('reduced-build', 'П')
-await clickExpression(`document.querySelector('[aria-label="Back"]')`, 'Back')
+await assertBrowser(
+  "document.querySelector('[data-view=reduced-build] .feedback')?.textContent.trim() === ''",
+  'reduced Build exposes no per-placement correctness',
+)
+
+// App Back uses the same browser-history contract and preserves both experiences' state.
+await clickExpression("document.querySelector('[aria-label=Back]')", 'Back')
 await waitForView('supported-build')
 await assertBrowser(
-  `document.querySelector('[data-view="supported-build"] .build-line')?.textContent.replace(/\\s/g, '') === 'Привіт'`,
+  "document.querySelector('[data-view=supported-build] .build-line')?.textContent.replace(/\\s/g, '') === 'Привіт'",
   'Back preserves completed supported Build',
 )
+await assertBrowser(
+  "[...document.querySelectorAll('[data-view=supported-build] .text-button')].some((button) => button.textContent.trim() === 'Close help')",
+  'Back preserves learner-opened Help state',
+)
+await assertBrowser(
+  "(() => { const ledger = JSON.parse(localStorage.getItem('yuzu.work096.lesson1.slice.v1') ?? '{}').evidenceLedger?.['supported-build']; return ledger?.supportUsed === true && ledger?.attempts >= 7 && ledger?.responses?.[0] === 'в' })()",
+  'Back preserves response, attempt and support provenance',
+)
+evidence.persistence.responsesAttemptsAndSupportPreserved = true
+
 await clickViewButton('supported-build', 'Continue')
 await waitForView('reduced-build')
 await assertBrowser(
-  `document.querySelector('[data-view="reduced-build"] .build-line')?.textContent.replace(/\\s/g, '').startsWith('П')`,
+  "document.querySelector('[data-view=reduced-build] .build-line')?.textContent.replace(/\\s/g, '').startsWith('П')",
   'returning to reduced Build preserves its partial sequence',
 )
 evidence.navigation.backPreservesBuildProgress = true
@@ -320,12 +474,17 @@ await screenshot('08-reduced-build.png')
 evidence.screenshots.push('08-reduced-build.png')
 
 for (const grapheme of WORD.slice(1)) await clickGrapheme('reduced-build', grapheme)
+await assertBrowser(
+  "document.querySelector('[data-view=reduced-build] .feedback')?.textContent.trim() === ''",
+  'completed reduced sequence still has no correctness before Check',
+)
 await clickViewButton('reduced-build', 'Check')
 await waitForExpression(
-  `document.querySelector('[data-view="reduced-build"] .feedback')?.textContent.includes('Yes')`,
+  "document.querySelector('[data-view=reduced-build] .feedback')?.textContent.includes('Yes')",
   'reduced Build full-sequence success',
 )
 evidence.build.supportedThenReduced = true
+evidence.build.supportedReferenceVisible = true
 evidence.build.reducedHasNoPerPlacementCorrectness = true
 await clickViewButton('reduced-build', 'Continue')
 await waitForView('context-return')
@@ -362,14 +521,27 @@ evidence.finalEvidence.uses094Media = true
 await screenshot('10-completion.png')
 evidence.screenshots.push('10-completion.png')
 await assertBrowser(
-  `document.querySelector('[data-view="complete"]')?.textContent.includes('Lesson complete') && document.querySelector('[data-view="complete"]')?.textContent.includes('Привіт')`,
+  "document.querySelector('[data-view=complete]')?.textContent.includes('Lesson complete.') && document.querySelector('[data-view=complete]')?.textContent.includes('Привіт')",
   'completion creates a clear Lesson boundary around the taught target',
 )
 await assertBrowser(
-  `!/master|A1|fluent|general reading/i.test(document.querySelector('[data-view="complete"]')?.textContent ?? '')`,
+  "[...document.querySelectorAll('[data-view=complete] button')].length === 1 && document.querySelector('[data-view=complete] button')?.textContent.trim() === 'Continue'",
+  'completion has exactly one Continue action and no Replay/new assessment',
+)
+await assertBrowser(
+  "!/master|A1|fluent|general reading/i.test(document.querySelector('[data-view=complete]')?.textContent ?? '')",
   'completion avoids unsupported mastery/A1/general-reading claims',
 )
+await evaluate(
+  "window.__work096CompletionContinued = false; window.addEventListener('yuzu:work096-representative-slice-complete', () => { window.__work096CompletionContinued = true }, { once: true })",
+)
+await clickViewButton('complete', 'Continue')
+await assertBrowser(
+  "window.__work096CompletionContinued === true",
+  'completion Continue emits the bounded representative-slice handoff event',
+)
 evidence.completion.clearClosure = true
+evidence.completion.singleContinueAction = true
 evidence.completion.noUnsupportedClaim = true
 
 await fs.writeFile(

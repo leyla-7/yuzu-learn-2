@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LESSON1_AUDIO_ASSETS } from './browser-model'
 
 type AudioId = keyof typeof LESSON1_AUDIO_ASSETS
@@ -16,6 +16,95 @@ type View =
   | { kind: 'reduced-build' }
   | { kind: 'context-return' }
   | { kind: 'complete' }
+
+type Feedback = 'idle' | 'correct' | 'retry'
+
+interface EvidenceLedgerEntry {
+  attempts: number
+  responses: string[]
+  supportUsed: boolean
+}
+
+type EvidenceLedger = Record<string, EvidenceLedgerEntry>
+
+interface PersistedSliceState {
+  version: 1
+  view: View
+  history: View[]
+  feedback: Feedback
+  supportedSequence: CoreGrapheme[]
+  reducedSequence: CoreGrapheme[]
+  supportedHelp: boolean
+  reducedHelp: boolean
+  vowelHelp: boolean
+  contextHelp: boolean
+  evidenceLedger: EvidenceLedger
+}
+
+const SLICE_STORAGE_KEY = 'yuzu.work096.lesson1.slice.v1'
+const SLICE_HISTORY_KEY = 'yuzuWork096'
+
+function defaultSliceState(): PersistedSliceState {
+  return {
+    version: 1,
+    view: { kind: 'encounter' },
+    history: [],
+    feedback: 'idle',
+    supportedSequence: [],
+    reducedSequence: [],
+    supportedHelp: false,
+    reducedHelp: false,
+    vowelHelp: false,
+    contextHelp: false,
+    evidenceLedger: {},
+  }
+}
+
+function loadSliceState(): PersistedSliceState {
+  if (typeof window === 'undefined') return defaultSliceState()
+
+  try {
+    const raw = window.localStorage.getItem(SLICE_STORAGE_KEY)
+    if (!raw) return defaultSliceState()
+    const parsed = JSON.parse(raw) as Partial<PersistedSliceState>
+    if (parsed.version !== 1 || !parsed.view || typeof parsed.view.kind !== 'string') {
+      return defaultSliceState()
+    }
+
+    return {
+      ...defaultSliceState(),
+      ...parsed,
+      version: 1,
+      view: parsed.view as View,
+      history: Array.isArray(parsed.history) ? parsed.history as View[] : [],
+      feedback:
+        parsed.feedback === 'correct' || parsed.feedback === 'retry'
+          ? parsed.feedback
+          : 'idle',
+      supportedSequence: Array.isArray(parsed.supportedSequence)
+        ? parsed.supportedSequence as CoreGrapheme[]
+        : [],
+      reducedSequence: Array.isArray(parsed.reducedSequence)
+        ? parsed.reducedSequence as CoreGrapheme[]
+        : [],
+      evidenceLedger:
+        parsed.evidenceLedger && typeof parsed.evidenceLedger === 'object'
+          ? parsed.evidenceLedger as EvidenceLedger
+          : {},
+    }
+  } catch {
+    return defaultSliceState()
+  }
+}
+
+function viewKey(view: View) {
+  if (view.kind === 'mapping-teach') return `mapping-teach-${view.index}`
+  if (view.kind === 'mapping-guided') {
+    return `mapping-guided-${view.index}-${view.lowercase ? 'lower' : 'upper'}`
+  }
+  if (view.kind === 'vowel-trial') return `vowel-trial-${view.index}`
+  return view.kind
+}
 
 const WORD: readonly CoreGrapheme[] = ['П', 'р', 'и', 'в', 'і', 'т']
 const SUPPORTED_BANK: readonly CoreGrapheme[] = ['в', 'П', 'т', 'и', 'р', 'і']
@@ -66,10 +155,11 @@ function AudioButton({
 }) {
   const asset = LESSON1_AUDIO_ASSETS[audioId]
   const mediaRef = useRef<HTMLAudioElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [played, setPlayed] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
 
-  async function play() {
+  async function play(returnFocus = false) {
     const media = mediaRef.current
     if (!media) return
     setStatus('loading')
@@ -98,6 +188,11 @@ function AudioButton({
       }
       setPlayed(true)
       setStatus('idle')
+      if (returnFocus) {
+        window.requestAnimationFrame(() => {
+          triggerRef.current?.focus({ preventScroll: true })
+        })
+      }
     } catch {
       setStatus('error')
     }
@@ -106,6 +201,7 @@ function AudioButton({
   return (
     <div className={compact ? 'audio-wrap is-compact' : 'audio-wrap'}>
       <button
+        ref={triggerRef}
         type="button"
         className="audio-button"
         data-audio-id={asset.id}
@@ -120,9 +216,12 @@ function AudioButton({
       {status === 'loading' ? <span className="audio-status">Loading…</span> : null}
       {status === 'error' ? (
         <div className="technical-error" role="alert">
-          <span>This audio couldn’t load.</span>
-          <button type="button" className="text-button" onClick={() => void play()}>
-            Try again
+          <span>Audio couldn’t play.</span>
+          <button type="button" className="text-button" onClick={() => void play(true)}>
+            Retry audio
+          </button>
+          <button type="button" className="text-button" onClick={() => window.location.reload()}>
+            Reload step
           </button>
         </div>
       ) : null}
@@ -204,35 +303,197 @@ function viewProgress(view: View) {
 }
 
 export function Lesson1() {
-  const [view, setView] = useState<View>({ kind: 'encounter' })
-  const [history, setHistory] = useState<View[]>([])
-  const [feedback, setFeedback] = useState<'idle' | 'correct' | 'retry'>('idle')
-  const [supportedSequence, setSupportedSequence] = useState<CoreGrapheme[]>([])
-  const [reducedSequence, setReducedSequence] = useState<CoreGrapheme[]>([])
-  const [supportedHelp, setSupportedHelp] = useState(false)
-  const [reducedHelp, setReducedHelp] = useState(false)
-  const [vowelHelp, setVowelHelp] = useState(false)
-  const [contextHelp, setContextHelp] = useState(false)
+  const [initial] = useState(loadSliceState)
+  const [view, setView] = useState<View>(initial.view)
+  const [history, setHistory] = useState<View[]>(initial.history)
+  const [feedback, setFeedback] = useState<Feedback>(initial.feedback)
+  const [supportedSequence, setSupportedSequence] =
+    useState<CoreGrapheme[]>(initial.supportedSequence)
+  const [reducedSequence, setReducedSequence] =
+    useState<CoreGrapheme[]>(initial.reducedSequence)
+  const [supportedHelp, setSupportedHelp] = useState(initial.supportedHelp)
+  const [reducedHelp, setReducedHelp] = useState(initial.reducedHelp)
+  const [vowelHelp, setVowelHelp] = useState(initial.vowelHelp)
+  const [contextHelp, setContextHelp] = useState(initial.contextHelp)
+  const [evidenceLedger, setEvidenceLedger] =
+    useState<EvidenceLedger>(initial.evidenceLedger)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const browserDepthRef = useRef(0)
 
   useEffect(() => {
     headingRef.current?.focus()
   }, [view])
 
+  useEffect(() => {
+    const persisted: PersistedSliceState = {
+      version: 1,
+      view,
+      history,
+      feedback,
+      supportedSequence,
+      reducedSequence,
+      supportedHelp,
+      reducedHelp,
+      vowelHelp,
+      contextHelp,
+      evidenceLedger,
+    }
+    window.localStorage.setItem(SLICE_STORAGE_KEY, JSON.stringify(persisted))
+  }, [
+    contextHelp,
+    evidenceLedger,
+    feedback,
+    history,
+    reducedHelp,
+    reducedSequence,
+    supportedHelp,
+    supportedSequence,
+    view,
+    vowelHelp,
+  ])
+
+  useEffect(() => {
+    const existing = window.history.state?.[SLICE_HISTORY_KEY] as
+      | { view?: View; history?: View[]; depth?: number }
+      | undefined
+
+    if (!existing?.view && initial.history.length > 0) {
+      const stack = [...initial.history, initial.view]
+      window.history.replaceState(
+        {
+          ...window.history.state,
+          [SLICE_HISTORY_KEY]: {
+            view: stack[0],
+            history: [],
+            depth: 0,
+          },
+        },
+        '',
+      )
+      for (let index = 1; index < stack.length; index += 1) {
+        window.history.pushState(
+          {
+            ...window.history.state,
+            [SLICE_HISTORY_KEY]: {
+              view: stack[index],
+              history: stack.slice(0, index),
+              depth: index,
+            },
+          },
+          '',
+        )
+      }
+      browserDepthRef.current = stack.length - 1
+    } else {
+      const depth = typeof existing?.depth === 'number' ? existing.depth : 0
+      browserDepthRef.current = depth
+      window.history.replaceState(
+        {
+          ...window.history.state,
+          [SLICE_HISTORY_KEY]: {
+            view: initial.view,
+            history: initial.history,
+            depth,
+          },
+        },
+        '',
+      )
+    }
+
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state?.[SLICE_HISTORY_KEY] as
+        | { view?: View; history?: View[]; depth?: number }
+        | undefined
+      if (!state?.view) return
+      browserDepthRef.current = typeof state.depth === 'number' ? state.depth : 0
+      setView(state.view)
+      setHistory(Array.isArray(state.history) ? state.history : [])
+      setFeedback('idle')
+    }
+
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [initial])
+
+  function recordResponse(key: string, response: string) {
+    setEvidenceLedger((current) => {
+      const existing = current[key] ?? {
+        attempts: 0,
+        responses: [],
+        supportUsed: false,
+      }
+      return {
+        ...current,
+        [key]: {
+          ...existing,
+          attempts: existing.attempts + 1,
+          responses: [...existing.responses, response],
+        },
+      }
+    })
+  }
+
+  function recordSupport(key: string) {
+    setEvidenceLedger((current) => {
+      const existing = current[key] ?? {
+        attempts: 0,
+        responses: [],
+        supportUsed: false,
+      }
+      return {
+        ...current,
+        [key]: {
+          ...existing,
+          supportUsed: true,
+        },
+      }
+    })
+  }
+
   function navigate(next: View) {
-    setHistory((current) => [...current, view])
+    const nextHistory = [...history, view]
+    const nextDepth = browserDepthRef.current + 1
+    browserDepthRef.current = nextDepth
+    window.history.pushState(
+      {
+        ...window.history.state,
+        [SLICE_HISTORY_KEY]: {
+          view: next,
+          history: nextHistory,
+          depth: nextDepth,
+        },
+      },
+      '',
+    )
+    setHistory(nextHistory)
     setView(next)
     setFeedback('idle')
   }
 
   function back() {
-    setHistory((current) => {
-      const previous = current.at(-1)
-      if (!previous) return current
-      setView(previous)
-      setFeedback('idle')
-      return current.slice(0, -1)
-    })
+    const previous = history.at(-1)
+    if (!previous) return
+
+    if (browserDepthRef.current > 0) {
+      window.history.back()
+      return
+    }
+
+    const nextHistory = history.slice(0, -1)
+    setView(previous)
+    setHistory(nextHistory)
+    setFeedback('idle')
+    window.history.replaceState(
+      {
+        ...window.history.state,
+        [SLICE_HISTORY_KEY]: {
+          view: previous,
+          history: nextHistory,
+          depth: 0,
+        },
+      },
+      '',
+    )
   }
 
   function mappingSuccess(index: number, lowercase = false) {
@@ -263,7 +524,11 @@ export function Lesson1() {
   const progress = viewProgress(view)
 
   return (
-    <main className="lesson-shell">
+    <main
+      className="lesson-shell"
+      data-session-storage-key={SLICE_STORAGE_KEY}
+      data-evidence-ledger={JSON.stringify(evidenceLedger)}
+    >
       <header className="lesson-topbar">
         <div className="topbar-row">
           {history.length > 0 ? (
@@ -333,14 +598,23 @@ export function Lesson1() {
                     className="grapheme-button"
                     lang="uk"
                     key={choice}
-                    onClick={() => choice === correct ? mappingSuccess(view.index, isLower) : setFeedback('retry')}
+                    onClick={() => {
+                      recordResponse(viewKey(view), choice)
+                      if (choice === correct) mappingSuccess(view.index, isLower)
+                      else setFeedback('retry')
+                    }}
                   >
                     {choice}
                   </button>
                 ))}
               </div>
               {renderFeedback()}
-              <details className="local-help">
+              <details
+                className="local-help"
+                onToggle={(event) => {
+                  if (event.currentTarget.open) recordSupport(viewKey(view))
+                }}
+              >
                 <summary>Help</summary>
                 <div className="help-content">
                   <AudioButton audioId={mapping.audio} label="Hear it again" compact />
@@ -355,14 +629,23 @@ export function Lesson1() {
             <p className="eyebrow">One more way</p>
             <h1 ref={headingRef} tabIndex={-1}>Choose the sound for <span lang="uk">П</span></h1>
             <div className="audio-choice-list" role="group" aria-label="Sound choices">
-              <AudioChoiceRow audioId="t" label="Sound A" onChoose={() => setFeedback('retry')} />
+              <AudioChoiceRow audioId="t" label="Sound A" onChoose={() => {
+                recordResponse(viewKey(view), 't')
+                setFeedback('retry')
+              }} />
               <AudioChoiceRow audioId="p" label="Sound B" onChoose={() => {
+                recordResponse(viewKey(view), 'p')
                 setFeedback('correct')
                 window.setTimeout(() => navigate({ kind: 'mapping-teach', index: 1 }), 280)
               }} />
             </div>
             {renderFeedback()}
-            <details className="local-help">
+            <details
+              className="local-help"
+              onToggle={(event) => {
+                if (event.currentTarget.open) recordSupport(viewKey(view))
+              }}
+            >
               <summary>Help</summary>
               <div className="help-content">
                 <FocusWord focus="П" />
@@ -420,7 +703,11 @@ export function Lesson1() {
                         className="grapheme-button"
                         lang="uk"
                         key={choice}
-                        onClick={() => choice === trial.grapheme ? next() : setFeedback('retry')}
+                        onClick={() => {
+                          recordResponse(viewKey(view), choice)
+                          if (choice === trial.grapheme) next()
+                          else setFeedback('retry')
+                        }}
                       >
                         {choice}
                       </button>
@@ -429,13 +716,37 @@ export function Lesson1() {
                 </>
               ) : (
                 <div className="audio-choice-list" role="group" aria-label="Sound choices">
-                  <AudioChoiceRow audioId={trial.grapheme === 'и' ? 'i' : 'y'} label="Sound A" onChoose={() => setFeedback('retry')} />
-                  <AudioChoiceRow audioId={trial.audio} label="Sound B" onChoose={next} />
+                  <AudioChoiceRow
+                    audioId={trial.grapheme === 'и' ? 'i' : 'y'}
+                    label="Sound A"
+                    onChoose={() => {
+                      recordResponse(
+                        viewKey(view),
+                        trial.grapheme === 'и' ? 'i' : 'y',
+                      )
+                      setFeedback('retry')
+                    }}
+                  />
+                  <AudioChoiceRow
+                    audioId={trial.audio}
+                    label="Sound B"
+                    onChoose={() => {
+                      recordResponse(viewKey(view), trial.audio)
+                      next()
+                    }}
+                  />
                 </div>
               )}
               {renderFeedback()}
               <div className="help-toggle">
-                <button type="button" className="text-button" onClick={() => setVowelHelp((open) => !open)}>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    if (!vowelHelp) recordSupport(viewKey(view))
+                    setVowelHelp((open) => !open)
+                  }}
+                >
                   {vowelHelp ? 'Close help' : 'Help'}
                 </button>
                 {vowelHelp ? (
@@ -467,6 +778,7 @@ export function Lesson1() {
                   lang="uk"
                   key={choice}
                   onClick={() => {
+                    recordResponse('supported-build', choice)
                     if (choice !== WORD[supportedSequence.length]) {
                       setFeedback('retry')
                       return
@@ -481,7 +793,14 @@ export function Lesson1() {
             </div>
             {renderFeedback()}
             <div className="help-toggle">
-              <button type="button" className="text-button" onClick={() => setSupportedHelp((open) => !open)}>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  if (!supportedHelp) recordSupport('supported-build')
+                  setSupportedHelp((open) => !open)
+                }}
+              >
                 {supportedHelp ? 'Close help' : 'Help'}
               </button>
               {supportedHelp && supportedSequence.length < WORD.length ? (
@@ -535,6 +854,7 @@ export function Lesson1() {
                 className="primary-button is-compact"
                 disabled={reducedSequence.length !== WORD.length}
                 onClick={() => {
+                  recordResponse('reduced-build', reducedSequence.join(''))
                   const correct = reducedSequence.every((item, index) => item === WORD[index])
                   setFeedback(correct ? 'correct' : 'retry')
                 }}
@@ -552,7 +872,14 @@ export function Lesson1() {
               </button>
             ) : null}
             <div className="help-toggle">
-              <button type="button" className="text-button" onClick={() => setReducedHelp((open) => !open)}>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  if (!reducedHelp) recordSupport('reduced-build')
+                  setReducedHelp((open) => !open)
+                }}
+              >
                 {reducedHelp ? 'Close help' : 'Help'}
               </button>
               {reducedHelp ? (
@@ -583,13 +910,23 @@ export function Lesson1() {
                 <ContextTile
                   index={index}
                   key={index}
-                  onChoose={() => setFeedback(index === 1 ? 'correct' : 'retry')}
+                  onChoose={() => {
+                    recordResponse('context-return', String(index))
+                    setFeedback(index === 1 ? 'correct' : 'retry')
+                  }}
                 />
               ))}
             </div>
             {renderFeedback()}
             <div className="help-toggle">
-              <button type="button" className="text-button" onClick={() => setContextHelp((open) => !open)}>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  if (!contextHelp) recordSupport('context-return')
+                  setContextHelp((open) => !open)
+                }}
+              >
                 {contextHelp ? 'Close help' : 'Help'}
               </button>
               {contextHelp ? (
@@ -609,15 +946,25 @@ export function Lesson1() {
         {view.kind === 'complete' ? (
           <section className="lesson-card completion-card" data-view="complete">
             <div className="completion-mark" aria-hidden="true">✓</div>
-            <p className="eyebrow">Lesson complete</p>
-            <h1 ref={headingRef} tabIndex={-1} className="completion-word" lang="uk">Привіт</h1>
-            <p className="completion-lead">You worked with one Ukrainian greeting from meaning to print.</p>
+            <h1 ref={headingRef} tabIndex={-1}>Lesson complete.</h1>
+            <div className="completion-word" lang="uk">Привіт</div>
+            <p className="completion-lead">In this lesson, you worked with:</p>
             <div className="completion-recap" aria-label="What you worked with">
-              <span>Heard it in a greeting</span>
-              <span>Connected sounds and letters</span>
-              <span>Built and read the word</span>
+              <span><span lang="uk">Привіт</span> as a greeting</span>
+              <span>its sounds and letters</span>
+              <span>building and reading the word</span>
             </div>
-            <button type="button" className="primary-button">Finish lesson</button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent('yuzu:work096-representative-slice-complete'),
+                )
+              }}
+            >
+              Continue
+            </button>
           </section>
         ) : null}
       </div>
