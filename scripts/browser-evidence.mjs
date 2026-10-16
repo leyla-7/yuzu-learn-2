@@ -207,7 +207,7 @@ await clickViewButton('encounter', 'Continue')
 await waitForView('mapping-teach')
 
 // Safe Back at the first boundary.
-await clickButton('Back')
+await clickExpression(`document.querySelector('[aria-label="Back"]')`, 'Back')
 await waitForView('encounter')
 await clickViewButton('encounter', 'Continue')
 await waitForView('mapping-teach')
@@ -303,7 +303,7 @@ await assertBrowser(
   'reduced Build removes full target and target audio',
 )
 await clickGrapheme('reduced-build', 'П')
-await clickButton('Back')
+await clickExpression(`document.querySelector('[aria-label="Back"]')`, 'Back')
 await waitForView('supported-build')
 await assertBrowser(
   `document.querySelector('[data-view="supported-build"] .build-line')?.textContent.replace(/\\s/g, '') === 'Привіт'`,
