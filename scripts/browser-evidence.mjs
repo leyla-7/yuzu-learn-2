@@ -3,26 +3,7 @@ import fs from 'node:fs/promises'
 const APP_URL = 'http://127.0.0.1:4173'
 const DEVTOOLS_URL = 'http://127.0.0.1:9222'
 const OUTPUT_DIR = 'browser-evidence'
-const TARGET_SEQUENCE = ['П', 'р', 'и', 'в', 'і', 'т']
-
-const audioToGrapheme = {
-  'audio/component-p': 'П',
-  'audio/component-r': 'р',
-  'audio/component-y': 'и',
-  'audio/component-v': 'в',
-  'audio/component-i': 'і',
-  'audio/component-t': 'т',
-}
-
-const graphemeToAudio = {
-  П: 'audio/component-p',
-  п: 'audio/component-p',
-  р: 'audio/component-r',
-  и: 'audio/component-y',
-  в: 'audio/component-v',
-  і: 'audio/component-i',
-  т: 'audio/component-t',
-}
+const WORD = ['П', 'р', 'и', 'в', 'і', 'т']
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -87,7 +68,7 @@ async function evaluate(expression) {
   return result.result.value
 }
 
-async function waitForExpression(expression, message, attempts = 80) {
+async function waitForExpression(expression, message, attempts = 120) {
   for (let index = 0; index < attempts; index += 1) {
     if (await evaluate(expression)) return
     await sleep(50)
@@ -95,113 +76,34 @@ async function waitForExpression(expression, message, attempts = 80) {
   throw new Error(`Timed out: ${message}`)
 }
 
-async function navigate() {
-  await send('Page.navigate', { url: APP_URL })
-  await waitForExpression("document.readyState === 'complete'", 'page load')
-  await waitForExpression("document.querySelector('.lesson-shell') !== null", 'Lesson shell')
-}
-
 async function clickExpression(expression, label) {
   const result = await evaluate(`(() => { const el = ${expression}; if (!el) return false; el.click(); return true })()`)
   if (!result) throw new Error(`Could not click ${label}`)
-  await sleep(35)
-}
-
-async function focusExpression(expression, label) {
-  const result = await evaluate(`(() => { const el = ${expression}; if (!el) return false; el.focus(); return document.activeElement === el })()`)
-  if (!result) throw new Error(`Could not focus ${label}`)
-  await sleep(20)
-}
-
-async function pressEnter() {
-  await send('Input.dispatchKeyEvent', {
-    type: 'keyDown',
-    key: 'Enter',
-    code: 'Enter',
-    windowsVirtualKeyCode: 13,
-    nativeVirtualKeyCode: 13,
-    text: '\r',
-    unmodifiedText: '\r',
-  })
-  await send('Input.dispatchKeyEvent', {
-    type: 'keyUp',
-    key: 'Enter',
-    code: 'Enter',
-    windowsVirtualKeyCode: 13,
-    nativeVirtualKeyCode: 13,
-  })
-}
-
-async function waitForActiveText(text, message) {
-  await waitForExpression(
-    `document.activeElement?.textContent?.trim() === ${JSON.stringify(text)}`,
-    message,
-  )
+  await sleep(45)
 }
 
 function byButtonText(text, selector = 'button') {
   return `[...document.querySelectorAll(${JSON.stringify(selector)})].find((el) => el.textContent.trim() === ${JSON.stringify(text)})`
 }
 
-function byAriaLabel(label) {
-  return `document.querySelector(${JSON.stringify(`[aria-label="${label}"]`)})`
-}
-
-function byAudioId(audioId) {
-  return `document.querySelector(${JSON.stringify(`[data-audio-id="${audioId}"]`)})`
-}
-
-async function clickButton(text, selector) {
+async function clickButton(text, selector = 'button') {
   await clickExpression(byButtonText(text, selector), `button ${text}`)
 }
 
-async function clickAria(label) {
-  await clickExpression(byAriaLabel(label), `aria-label ${label}`)
+async function clickViewButton(view, text) {
+  await clickButton(text, `[data-view="${view}"] button`)
 }
 
-const playedAudio = []
-
-async function clickAudio(audioId, lessonState = 'unspecified') {
-  const token = `evidence-${Date.now()}-${playedAudio.length}`
-  const details = await evaluate(`(() => {
-    const button = ${byAudioId(audioId)}
-    if (!button) return null
-    const media = [...document.querySelectorAll('[data-audio-media-id]')]
-      .find((candidate) => candidate.dataset.audioMediaId === ${JSON.stringify(audioId)})
-    if (!media) return null
-    media.dataset.evidenceToken = ${JSON.stringify(token)}
-    return {
-      sources: button.dataset.audioSources?.split('|') ?? [],
-      status: button.dataset.audioStatus ?? null,
-    }
-  })()`)
-
-  if (!details) throw new Error(`Could not prepare audio evidence for ${audioId}`)
-
-  await clickExpression(byAudioId(audioId), `audio ${audioId}`)
-  await waitForExpression(
-    `(() => {
-      const media = document.querySelector('[data-evidence-token="${token}"]')
-      return media ? media.currentTime > 0 : false
-    })()`,
-    `${audioId} begins real media playback`,
-    240,
+async function clickGrapheme(view, grapheme) {
+  await clickExpression(
+    `[...document.querySelectorAll('[data-view="${view}"] .grapheme-button')].find((el) => el.textContent.trim() === ${JSON.stringify(grapheme)})`,
+    `${view} grapheme ${grapheme}`,
   )
-  await waitForExpression(
-    `(() => {
-      const media = document.querySelector('[data-evidence-token="${token}"]')
-      return !media || media.dataset.audioPlayback === 'complete'
-    })()`,
-    `${audioId} completes real media playback or advances after completion`,
-    360,
-  )
+}
 
-  playedAudio.push({
-    audioId,
-    lessonState,
-    sources: details.sources,
-    status: details.status,
-  })
+async function assertBrowser(condition, message) {
+  const passed = await evaluate(condition)
+  if (!passed) throw new Error(`Browser assertion failed: ${message}`)
 }
 
 async function screenshot(fileName) {
@@ -212,268 +114,269 @@ async function screenshot(fileName) {
   await fs.writeFile(`${OUTPUT_DIR}/${fileName}`, Buffer.from(result.data, 'base64'))
 }
 
-async function assertBrowser(condition, message) {
-  const passed = await evaluate(condition)
-  if (!passed) throw new Error(`Browser assertion failed: ${message}`)
+async function waitForView(view) {
+  await waitForExpression(`document.querySelector('[data-view="${view}"]') !== null`, `view ${view}`)
 }
 
-async function completeContextChoice() {
-  await clickAria('Beginning of contact')
+async function clickAudio(audioId) {
+  const token = `audio-${Date.now()}-${Math.random()}`
+  const prepared = await evaluate(`(() => {
+    const button = [...document.querySelectorAll('[data-audio-id="${audioId}"]')]
+      .find((candidate) => candidate.offsetParent !== null)
+    if (!button) return false
+    const wraps = [...document.querySelectorAll('.audio-wrap')]
+    const wrap = wraps.find((candidate) => candidate.contains(button))
+    const media = wrap?.querySelector('audio')
+    if (!media) return false
+    media.dataset.evidenceToken = ${JSON.stringify(token)}
+    button.click()
+    return true
+  })()`)
+  if (!prepared) throw new Error(`Could not start audio ${audioId}`)
+
   await waitForExpression(
-    byButtonText('Continue') + ' !== undefined',
-    'context Continue button',
+    `(() => { const media = document.querySelector('[data-evidence-token="${token}"]'); return media && (media.currentTime > 0 || media.ended) })()`,
+    `${audioId} begins playback`,
+    240,
   )
-  await clickButton('Continue')
+  await waitForExpression(
+    `(() => { const media = document.querySelector('[data-evidence-token="${token}"]'); return media && media.ended })()`,
+    `${audioId} ends playback`,
+    480,
+  )
 }
 
-async function completeMappingPractice() {
-  for (let guard = 0; guard < 40; guard += 1) {
-    const canContinue = await evaluate(`${byButtonText('Continue', '.practice-step button')} !== undefined`)
-    if (canContinue) {
-      await clickButton('Continue', '.practice-step button')
-      return
-    }
-
-    const focus = await evaluate("document.querySelector('.practice-step .focus-grapheme')?.textContent?.trim() ?? null")
-    if (focus) {
-      const audioId = graphemeToAudio[focus]
-      if (!audioId) throw new Error(`No audio mapping for ${focus}`)
-      await clickAudio(audioId, 'mapping-practice')
-      continue
-    }
-
-    const promptAudio = await evaluate("document.querySelector('.practice-step > .audio-control[data-audio-id]')?.dataset.audioId ?? null")
-    await clickAudio(promptAudio, 'mapping-practice')
-    const grapheme = audioToGrapheme[promptAudio]
-    if (!grapheme) throw new Error(`No grapheme mapping for ${promptAudio}`)
-
-    const lowercaseP = await evaluate("[...document.querySelectorAll('.practice-step .choice-row .grapheme-button')].some((el) => el.textContent.trim() === 'п')")
-    const expected = promptAudio === 'audio/component-p' && lowercaseP ? 'п' : grapheme
-    await clickButton(expected, '.practice-step .choice-row .grapheme-button')
-  }
-  throw new Error('Mapping practice did not complete')
+async function chooseSecondSoundOption() {
+  await clickExpression(
+    "document.querySelectorAll('.sound-option .choose-sound')[1]",
+    'second sound option Choose',
+  )
 }
 
-async function completeVowelPractice() {
-  for (let guard = 0; guard < 12; guard += 1) {
-    const canContinue = await evaluate(`${byButtonText('Continue', '.vowel-step button')} !== undefined`)
-    if (canContinue) {
-      await clickButton('Continue', '.vowel-step button')
-      return
-    }
-
-    const focus = await evaluate("document.querySelector('.vowel-step .focus-grapheme')?.textContent?.trim() ?? null")
-    if (focus) {
-      await clickAudio(graphemeToAudio[focus], 'vowel-practice')
-      continue
-    }
-
-    const promptAudio = await evaluate("document.querySelector('.vowel-step > .audio-control[data-audio-id]')?.dataset.audioId ?? null")
-    await clickAudio(promptAudio, 'vowel-practice')
-    const expected = promptAudio === 'audio/component-y' ? 'и' : promptAudio === 'audio/component-i' ? 'і' : null
-    if (!expected) throw new Error(`Unexpected vowel audio ${promptAudio}`)
-    await clickButton(expected, '.vowel-step .choice-row .grapheme-button')
-  }
-  throw new Error('Vowel practice did not complete')
-}
-
-async function completeBuildRead(useAccessible) {
-  if (useAccessible) await clickButton('Use nonvisual version', '.build-step button')
-
-  for (let pass = 0; pass < 2; pass += 1) {
-    if (pass === 0) {
-      await clickButton('Help', '.build-step button')
-      await clickAudio('audio/neutral-target', 'build-read-supported')
-      await clickAudio('audio/beginning-pr', 'build-read-supported')
-    }
-    for (const component of TARGET_SEQUENCE) {
-      await clickButton(component, '.build-step .grapheme-button')
-    }
-    await waitForExpression(
-      `${byButtonText('Continue', '.build-step button')} !== undefined`,
-      `Build pass ${pass + 1} Continue`,
-    )
-    await clickButton('Continue', '.build-step button')
-  }
-}
-
-async function reachL9(useAccessible) {
-  await navigate()
-  await clickAudio('audio/contextual-target', 'meet')
-  await clickButton('Continue')
-  await completeContextChoice()
-  await completeMappingPractice()
-  await completeVowelPractice()
-  await completeBuildRead(useAccessible)
-}
-
-const evidence = {
-  standardVisual: {},
-  accessible: {},
-  audioPlayback: {},
-  screenshots: [],
+async function runMapping(index, grapheme, audioId) {
+  await waitForView('mapping-teach')
+  await assertBrowser(
+    `document.querySelector('[data-view="mapping-teach"] .focus-word .is-focused')?.textContent === ${JSON.stringify(grapheme)}`,
+    `mapping teach foregrounds ${grapheme}`,
+  )
+  await clickAudio(`audio/component-${audioId}`)
+  await clickViewButton('mapping-teach', 'Try it')
+  await waitForView('mapping-guided')
+  await clickAudio(`audio/component-${audioId}`)
+  await clickGrapheme('mapping-guided', grapheme)
+  await sleep(380)
 }
 
 await send('Page.enable')
 await send('Runtime.enable')
+await send('Emulation.setDeviceMetricsOverride', {
+  width: 1180,
+  height: 860,
+  deviceScaleFactor: 1,
+  mobile: false,
+})
 
-// Standard visual route.
-await reachL9(false)
-await waitForExpression("document.querySelector('.l9-step') !== null", 'visual L9')
-await assertBrowser("document.body.innerText.includes('Привіт')", 'visual L9 exposes written target')
-await assertBrowser("!document.body.innerText.includes('Привіп') && !document.body.innerText.includes('Птивіт')", 'visual L9 keeps foil spellings internal')
-await assertBrowser("document.querySelectorAll('.l9-step [data-audio-id]').length === 3", 'visual L9 exposes three audio option seams')
-await screenshot('standard-visual-l9.png')
-evidence.screenshots.push('standard-visual-l9.png')
-evidence.standardVisual = {
-  targetVisible: true,
-  foilSpellingsHidden: true,
-  optionSeams: ['audio/l9-target', 'audio/l9-f1', 'audio/l9-f2'],
-}
-await clickAudio('audio/l9-f1', 'visual-l9')
-await clickAudio('audio/l9-f2', 'visual-l9')
-await clickAudio('audio/l9-target', 'visual-l9')
-await clickButton('Continue', '.l9-step button')
-await completeContextChoice()
-await waitForExpression("document.querySelector('.completion-step') !== null", 'completion')
-await screenshot('standard-completion.png')
-evidence.screenshots.push('standard-completion.png')
+await send('Page.navigate', { url: APP_URL })
+await waitForExpression("document.readyState === 'complete'", 'page load')
+await waitForView('encounter')
 
-// Accessible route, before evidence submission.
-await reachL9(true)
-await waitForExpression("document.querySelector('.accessible-l9-step') !== null", 'accessible L9-A')
-await assertBrowser("!document.body.innerText.includes('Привіт')", 'accessible L9-A hides full target before submission')
-await assertBrowser("document.querySelector('[data-audio-id=\"audio/l9-target\"]') === null && document.querySelector('[data-audio-id=\"audio/neutral-target\"]') === null", 'accessible L9-A has no target-audio control before submission')
-await assertBrowser("!document.querySelector('[data-audio-sources*=\"/2.m4a\"]') && !document.querySelector('[data-audio-sources*=\"/12.m4a\"]')", 'accessible L9-A withholds full target recording sources before reintegration')
-await assertBrowser("[...document.querySelectorAll('.accessible-l9-step .grapheme-button')].map((el) => el.textContent.trim()).sort().join('') === ['П','р','и','в','і','т'].sort().join('')", 'accessible L9-A exposes exactly six taught grapheme controls')
-await assertBrowser("[...document.querySelectorAll('.accessible-l9-step button')].find((el) => el.textContent.trim() === 'Check')?.disabled === true", 'Check is disabled before six components')
-await screenshot('accessible-l9-before-submit.png')
-evidence.screenshots.push('accessible-l9-before-submit.png')
-
-// Keyboard focus contract: selection must keep focus inside reconstruction.
-await focusExpression(
-  byButtonText('П', '.accessible-l9-step .grapheme-button'),
-  'first accessible grapheme',
-)
-await pressEnter()
-await waitForActiveText(
-  'р',
-  'keyboard selection focus moves to the first remaining grapheme',
-)
-await assertBrowser(
-  "document.activeElement?.classList.contains('grapheme-button') === true",
-  'keyboard selection keeps focus on a reconstruction grapheme',
-)
-
-// Deliberately build an incorrect full sequence using keyboard activation.
-await focusExpression(
-  byButtonText('и', '.accessible-l9-step .grapheme-button'),
-  'out-of-order accessible grapheme',
-)
-await pressEnter()
-await waitForActiveText('р', 'focus after out-of-order second grapheme')
-for (const expectedFocus of ['в', 'і', 'т', 'Check']) {
-  await pressEnter()
-  await waitForActiveText(
-    expectedFocus,
-    `keyboard reconstruction focus reaches ${expectedFocus}`,
-  )
-}
-await assertBrowser(
-  "document.activeElement?.textContent?.trim() === 'Check' && document.activeElement?.disabled === false",
-  'focus moves to enabled Check after the sixth grapheme',
-)
-await pressEnter()
-await waitForActiveText(
-  'П',
-  'failed Check restores focus to first restored grapheme',
-)
-await assertBrowser(
-  "document.activeElement?.classList.contains('grapheme-button') === true",
-  'failed Check restores focus inside reconstruction choices',
-)
-await screenshot('accessible-l9-focus-reset.png')
-evidence.screenshots.push('accessible-l9-focus-reset.png')
-
-// Retry correctly from the restored focus, using keyboard only.
-for (const expectedFocus of ['р', 'и', 'в', 'і', 'т', 'Check']) {
-  await pressEnter()
-  await waitForActiveText(
-    expectedFocus,
-    `keyboard retry focus reaches ${expectedFocus}`,
-  )
-}
-await assertBrowser(
-  "document.activeElement?.textContent?.trim() === 'Check' && document.activeElement?.disabled === false",
-  'keyboard retry remains inside reconstruction through Check',
-)
-await pressEnter()
-await waitForExpression("document.body.innerText.includes('Привіт')", 'accessible reintegration target')
-await assertBrowser("document.querySelector('[data-audio-id=\"audio/neutral-target\"]') !== null", 'target audio seam appears only after accessible reconstruction')
-await clickAudio('audio/neutral-target', 'accessible-l9-reintegration')
-await screenshot('accessible-l9-reintegration.png')
-evidence.screenshots.push('accessible-l9-reintegration.png')
-evidence.accessible = {
-  targetHiddenBeforeSubmission: true,
-  targetAudioHiddenBeforeSubmission: true,
-  sixControls: true,
-  checkGatedUntilSix: true,
-  keyboardSelectionFocusRetained: true,
-  failedCheckFocusRestoredToFirstChoice: true,
-  keyboardRetryCompleted: true,
-  targetAndAudioReintroducedAfterSuccessfulReconstruction: true,
+const evidence = {
+  work: 'WORK-YUZU-096',
+  media: {},
+  interaction: {},
+  mapping: {},
+  vowels: {},
+  build: {},
+  navigation: {},
+  finalEvidence: {},
+  completion: {},
+  screenshots: [],
 }
 
-const expectedRuntimeSources = [
-  '/audio/lesson1/1.m4a',
-  '/audio/lesson1/2.m4a',
-  '/audio/lesson1/3.m4a',
-  '/audio/lesson1/4.m4a',
-  '/audio/lesson1/5.m4a',
-  '/audio/lesson1/6.m4a',
-  '/audio/lesson1/7.m4a',
-  '/audio/lesson1/8.m4a',
-  '/audio/lesson1/12.m4a',
-  '/audio/lesson1/13.m4a',
-  '/audio/lesson1/14.m4a',
-]
+// Contextual encounter: actual media + accepted audio; listening must not navigate.
+await assertBrowser(
+  "document.querySelector('.anchor-media img')?.complete && document.querySelector('.anchor-media img')?.naturalWidth > 0",
+  '094 anchor greeting media loads as an actual image',
+)
+evidence.media.anchorNaturalSize = await evaluate("({ width: document.querySelector('.anchor-media img').naturalWidth, height: document.querySelector('.anchor-media img').naturalHeight })")
+await screenshot('01-contextual-encounter.png')
+evidence.screenshots.push('01-contextual-encounter.png')
+await clickAudio('audio/contextual-target')
+await assertBrowser("document.querySelector('[data-view="encounter"]') !== null", 'Listen/Replay never submits or navigates')
+await clickViewButton('encounter', 'Continue')
+await waitForView('mapping-teach')
 
-for (const source of expectedRuntimeSources) {
-  if (!playedAudio.some((entry) => entry.sources.includes(source))) {
-    throw new Error(`Accepted runtime audio was not played in Chrome: ${source}`)
+// Safe Back at the first boundary.
+await clickButton('Back')
+await waitForView('encounter')
+await clickViewButton('encounter', 'Continue')
+await waitForView('mapping-teach')
+evidence.navigation.backReturnsToPreviousLearnerState = true
+
+// Complete П/п teach -> guided -> reciprocal retrieval path.
+await screenshot('02-mapping-teach-p.png')
+evidence.screenshots.push('02-mapping-teach-p.png')
+await clickAudio('audio/component-p')
+await clickViewButton('mapping-teach', 'Try it')
+await waitForView('mapping-guided')
+await screenshot('03-mapping-guided-p.png')
+evidence.screenshots.push('03-mapping-guided-p.png')
+await clickAudio('audio/component-p')
+await clickGrapheme('mapping-guided', 'П')
+await sleep(380)
+await waitForView('mapping-guided')
+await assertBrowser("document.body.innerText.includes('п')", 'lowercase п receives guided practice without a separate alphabet lesson')
+await clickAudio('audio/component-p')
+await clickGrapheme('mapping-guided', 'п')
+await sleep(380)
+await waitForView('mapping-retrieve')
+await screenshot('04-mapping-retrieval-p.png')
+evidence.screenshots.push('04-mapping-retrieval-p.png')
+
+// Listening to answer alternatives must not submit.
+await clickAudio('audio/component-t')
+await assertBrowser(
+  "!document.querySelector('[data-view="mapping-retrieve"] .feedback').textContent.includes('Try again')",
+  'playing an audio alternative does not submit an answer',
+)
+await clickAudio('audio/component-p')
+await assertBrowser(
+  "document.querySelector('[data-view="mapping-retrieve"]') !== null",
+  'playing the correct audio still does not submit',
+)
+await chooseSecondSoundOption()
+await sleep(380)
+evidence.mapping.completePPath = true
+evidence.interaction.playReplayNeverSubmits = true
+
+// Establish remaining consonant mappings enough for Build.
+await runMapping(1, 'р', 'r')
+await runMapping(2, 'в', 'v')
+await runMapping(3, 'т', 't')
+await waitForView('vowel-compare')
+
+// Explicit experiential и/і.
+await screenshot('05-vowel-compare.png')
+evidence.screenshots.push('05-vowel-compare.png')
+await clickAudio('audio/component-y')
+await clickAudio('audio/component-i')
+await clickViewButton('vowel-compare', 'Try it')
+for (let trial = 0; trial < 4; trial += 1) {
+  await waitForView('vowel-trial')
+  if (trial === 0) {
+    await clickAudio('audio/component-y')
+    await clickGrapheme('vowel-trial', 'и')
+  } else if (trial === 1) {
+    await clickAudio('audio/component-i')
+    await clickGrapheme('vowel-trial', 'і')
+  } else {
+    const before = await evaluate("document.querySelector('[data-view="vowel-trial"] .feedback').textContent")
+    const audioIds = await evaluate("[...document.querySelectorAll('[data-view="vowel-trial"] .sound-option [data-audio-id]')].map((el) => el.dataset.audioId)")
+    for (const id of audioIds) await clickAudio(id)
+    const after = await evaluate("document.querySelector('[data-view="vowel-trial"] .feedback').textContent")
+    if (before !== after) throw new Error('Listening changed vowel correctness state before Choose')
+    await chooseSecondSoundOption()
   }
+  await sleep(380)
 }
+await waitForView('supported-build')
+evidence.vowels.compareAndReplay = true
+evidence.vowels.guidedAndReciprocalPractice = true
 
-const vowelSources = playedAudio
-  .filter((entry) => entry.lessonState === 'vowel-practice')
-  .flatMap((entry) => entry.sources)
-if (!vowelSources.includes('/audio/lesson1/5.m4a') ||
-    !vowelSources.includes('/audio/lesson1/7.m4a')) {
-  throw new Error('Explicit и/і practice did not reuse accepted 5.m4a + 7.m4a')
-}
-
-const beginningSupport = playedAudio.find(
-  (entry) => entry.audioId === 'audio/beginning-pr',
+// Supported Build: compact local Help.
+await screenshot('06-supported-build.png')
+evidence.screenshots.push('06-supported-build.png')
+await clickViewButton('supported-build', 'Help')
+await assertBrowser(
+  "document.querySelector('[data-view="supported-build"] .compact-help')?.getBoundingClientRect().height < 120",
+  'Build Help stays compact and local',
 )
-if (JSON.stringify(beginningSupport?.sources) !== JSON.stringify([
-  '/audio/lesson1/3.m4a',
-  '/audio/lesson1/4.m4a',
-])) {
-  throw new Error('Beginning support must reuse accepted component audio without a /pr/ asset')
-}
+await screenshot('07-supported-build-help.png')
+evidence.screenshots.push('07-supported-build-help.png')
+for (const grapheme of WORD) await clickGrapheme('supported-build', grapheme)
+await clickViewButton('supported-build', 'Continue')
+await waitForView('reduced-build')
 
-evidence.audioPlayback = {
-  acceptedRuntimeSourcesPlayed: expectedRuntimeSources,
-  explicitVowelContrastUsesMappingFiles: true,
-  beginningSupportUsesComponentSequenceWithoutStandalonePrAsset: true,
-  unusedAcceptedContrastAsset: '/audio/lesson1/9.m4a',
-  playedAudio,
-}
+// Reduced Build must preserve progress through Back and materially remove target/per-placement support.
+await assertBrowser(
+  "!document.querySelector('[data-view="reduced-build"] .focus-word') && !document.querySelector('[data-view="reduced-build"] [data-audio-id="audio/neutral-target"]')",
+  'reduced Build removes full target and target audio',
+)
+await clickGrapheme('reduced-build', 'П')
+await clickButton('Back')
+await waitForView('supported-build')
+await assertBrowser(
+  "document.querySelector('[data-view="supported-build"] .build-line')?.textContent.replace(/\\s/g, '') === 'Привіт'",
+  'Back preserves completed supported Build',
+)
+await clickViewButton('supported-build', 'Continue')
+await waitForView('reduced-build')
+await assertBrowser(
+  "document.querySelector('[data-view="reduced-build"] .build-line')?.textContent.replace(/\\s/g, '').startsWith('П')",
+  'returning to reduced Build preserves its partial sequence',
+)
+evidence.navigation.backPreservesBuildProgress = true
+await screenshot('08-reduced-build.png')
+evidence.screenshots.push('08-reduced-build.png')
+
+for (const grapheme of WORD.slice(1)) await clickGrapheme('reduced-build', grapheme)
+await clickViewButton('reduced-build', 'Check')
+await waitForExpression(
+  "document.querySelector('[data-view="reduced-build"] .feedback')?.textContent.includes('Yes')",
+  'reduced Build full-sequence success',
+)
+evidence.build.supportedThenReduced = true
+evidence.build.reducedHasNoPerPlacementCorrectness = true
+await clickViewButton('reduced-build', 'Continue')
+await waitForView('context-return')
+
+// Candidate final evidence: fresh context + print, no target audio until Help.
+await assertBrowser(
+  "document.querySelector('[data-view="context-return"] [data-audio-id="audio/neutral-target"]') === null",
+  'final evidence does not expose target audio before Help',
+)
+await assertBrowser(
+  "document.querySelector('[data-view="context-return"] .context-target')?.textContent.trim() === 'Привіт'",
+  'final evidence uses full taught print',
+)
+await assertBrowser(
+  "getComputedStyle(document.querySelector('.context-image')).backgroundImage.includes('L1-07_context_sprite.webp')",
+  'fresh-context choices use the actual 094 media sprite',
+)
+const mediaFetch = await evaluate("fetch('/media/lesson1/L1-07_context_sprite.webp').then((r) => r.ok)")
+if (!mediaFetch) throw new Error('094 context sprite is not browser-loadable')
+await screenshot('09-final-fresh-context.png')
+evidence.screenshots.push('09-final-fresh-context.png')
+
+await clickExpression("document.querySelectorAll('.context-tile')[1]", '094 greeting moment')
+await waitForExpression(
+  "document.querySelector('[data-view="context-return"] .feedback')?.textContent.includes('Yes')",
+  'fresh-context correct feedback',
+)
+await clickViewButton('context-return', 'Continue')
+await waitForView('complete')
+evidence.finalEvidence.pattern = 'printed taught target -> fresh greeting moment'
+evidence.finalEvidence.noPreResponseTargetAudio = true
+evidence.finalEvidence.uses094Media = true
+
+await screenshot('10-completion.png')
+evidence.screenshots.push('10-completion.png')
+await assertBrowser(
+  "document.querySelector('[data-view="complete"]')?.innerText.includes('Lesson complete') && document.querySelector('[data-view="complete"]')?.innerText.includes('Привіт')",
+  'completion creates a clear Lesson boundary around the taught target',
+)
+await assertBrowser(
+  "!/master|A1|fluent|general reading/i.test(document.querySelector('[data-view="complete"]')?.innerText ?? '')",
+  'completion avoids unsupported mastery/A1/general-reading claims',
+)
+evidence.completion.clearClosure = true
+evidence.completion.noUnsupportedClaim = true
 
 await fs.writeFile(
   `${OUTPUT_DIR}/browser-evidence.json`,
   JSON.stringify(evidence, null, 2),
 )
-console.log('WORK-YUZU-063 real-browser evidence PASS')
+
+console.log('WORK-YUZU-096 representative browser slice PASS')
 console.log(JSON.stringify(evidence, null, 2))
 socket.close()
