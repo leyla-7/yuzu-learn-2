@@ -362,11 +362,11 @@ evidence.finalEvidence.uses094Media = true
 await screenshot('10-completion.png')
 evidence.screenshots.push('10-completion.png')
 await assertBrowser(
-  `document.querySelector('[data-view="complete"]')?.innerText.includes('Lesson complete') && document.querySelector('[data-view="complete"]')?.innerText.includes('Привіт')`,
+  `document.querySelector('[data-view="complete"]')?.textContent.includes('Lesson complete') && document.querySelector('[data-view="complete"]')?.textContent.includes('Привіт')`,
   'completion creates a clear Lesson boundary around the taught target',
 )
 await assertBrowser(
-  `!/master|A1|fluent|general reading/i.test(document.querySelector('[data-view="complete"]')?.innerText ?? '')`,
+  `!/master|A1|fluent|general reading/i.test(document.querySelector('[data-view="complete"]')?.textContent ?? '')`,
   'completion avoids unsupported mastery/A1/general-reading claims',
 )
 evidence.completion.clearClosure = true
