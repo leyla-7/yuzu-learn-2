@@ -32,6 +32,9 @@ jobs:
       - name: Verify accepted Lesson 1 audio bytes
         run: node scripts/verify-audio-assets.mjs
 
+      - name: Verify Lesson 1 context media integrity
+        run: node scripts/verify-media-assets.mjs
+
       - name: Verify foundation
         run: npm run check
 
@@ -70,7 +73,7 @@ jobs:
           name: lesson1-browser-build
           path: dist
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
       - name: Upload browser evidence
         uses: actions/upload-artifact@v4.6.2
@@ -78,4 +81,4 @@ jobs:
           name: lesson1-browser-evidence
           path: browser-evidence
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30

@@ -133,6 +133,38 @@ async function assertBrowser(condition, message) {
   if (!passed) throw new Error(`Browser assertion failed: ${message}`)
 }
 
+async function renderedImageStats(selector) {
+  const expression = "(async () => {" +
+    "const image=document.querySelector(" + JSON.stringify(selector) + ");" +
+    "if(!(image instanceof HTMLImageElement)) throw new Error('Image element not found');" +
+    "await image.decode();" +
+    "const rect=image.getBoundingClientRect();" +
+    "const width=Math.max(1,Math.round(rect.width));" +
+    "const height=Math.max(1,Math.round(rect.height));" +
+    "const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;" +
+    "const context=canvas.getContext('2d',{willReadFrequently:true});if(!context) throw new Error('Canvas unavailable');" +
+    "context.drawImage(image,0,0,width,height);" +
+    "const pixels=context.getImageData(0,0,width,height).data;let min=255,max=0,sampled=0;" +
+    "for(let index=0;index<pixels.length;index+=76){const luma=pixels[index]*0.2126+pixels[index+1]*0.7152+pixels[index+2]*0.0722;min=Math.min(min,luma);max=Math.max(max,luma);sampled+=1;}" +
+    "return {naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight,renderedWidth:width,renderedHeight:height,sampled,lumaRange:max-min};" +
+    "})()"
+  return evaluate(expression)
+}
+
+async function spriteStats(url) {
+  const expression = "(async () => {" +
+    "const response=await fetch(" + JSON.stringify(url) + ",{cache:'no-store'});if(!response.ok) throw new Error('Sprite fetch failed');" +
+    "const bitmap=await createImageBitmap(await response.blob());" +
+    "const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;" +
+    "const context=canvas.getContext('2d',{willReadFrequently:true});if(!context) throw new Error('Canvas unavailable');" +
+    "context.drawImage(bitmap,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;" +
+    "const cellWidth=Math.floor(canvas.width/4);const cells=[];" +
+    "for(let cell=0;cell<4;cell+=1){let min=255,max=0,sampled=0;for(let y=0;y<canvas.height;y+=7){for(let x=cell*cellWidth;x<(cell+1)*cellWidth;x+=7){const index=(y*canvas.width+x)*4;const luma=pixels[index]*0.2126+pixels[index+1]*0.7152+pixels[index+2]*0.0722;min=Math.min(min,luma);max=Math.max(max,luma);sampled+=1;}}cells.push({sampled,lumaRange:max-min});}" +
+    "bitmap.close();return {width:canvas.width,height:canvas.height,cells};" +
+    "})()"
+  return evaluate(expression)
+}
+
 async function screenshot(fileName) {
   const result = await send('Page.captureScreenshot', {
     format: 'png',
@@ -183,15 +215,24 @@ async function chooseSecondSoundOption() {
 async function runMapping(index, grapheme, audioId) {
   await waitForView('mapping-teach')
   await assertBrowser(
-    `document.querySelector('[data-view="mapping-teach"] .focus-word .is-focused')?.textContent === ${JSON.stringify(grapheme)}`,
-    `mapping teach foregrounds ${grapheme}`,
+    "document.querySelector('[data-view=\\\"mapping-teach\\\"] .focus-word .is-focused')?.textContent === " + JSON.stringify(grapheme),
+    'mapping teach foregrounds ' + grapheme,
   )
-  await clickAudio(`audio/component-${audioId}`)
+  await clickAudio('audio/component-' + audioId)
   await clickViewButton('mapping-teach', 'Try it')
   await waitForView('mapping-guided')
-  await clickAudio(`audio/component-${audioId}`)
+  await clickAudio('audio/component-' + audioId)
   await clickGrapheme('mapping-guided', grapheme)
-  await sleep(380)
+  await waitForExpression(
+    "document.querySelector('[data-view=\\\"mapping-guided\\\"] .feedback')?.textContent.includes('Yes')",
+    grapheme + ' correct feedback',
+  )
+  await sleep(700)
+  await assertBrowser(
+    "document.querySelector('[data-view=\\\"mapping-guided\\\"]') !== null && document.querySelector('[data-view=\\\"mapping-guided\\\"] .feedback')?.textContent.includes('Yes')",
+    grapheme + ' correct feedback persists without timed navigation',
+  )
+  await clickViewButton('mapping-guided', 'Continue')
 }
 
 await send('Page.enable')
@@ -229,13 +270,17 @@ const evidence = {
 }
 
 // Contextual encounter: actual media + accepted audio; listening must not navigate.
-await assertBrowser(
-  "document.querySelector('.anchor-media img')?.complete && document.querySelector('.anchor-media img')?.naturalWidth > 0",
-  '094 anchor greeting media loads as an actual image',
-)
-evidence.media.anchorNaturalSize = await evaluate(
-  "({ width: document.querySelector('.anchor-media img').naturalWidth, height: document.querySelector('.anchor-media img').naturalHeight })",
-)
+const anchorStats = await renderedImageStats('.anchor-media img')
+if (
+  anchorStats.naturalWidth !== 600 ||
+  anchorStats.naturalHeight !== 172 ||
+  anchorStats.renderedWidth < 100 ||
+  anchorStats.renderedHeight < 20 ||
+  anchorStats.lumaRange < 40
+) {
+  throw new Error('094 anchor failed decode/render integrity: ' + JSON.stringify(anchorStats))
+}
+evidence.media.anchor = anchorStats
 await screenshot('01-contextual-encounter.png')
 evidence.screenshots.push('01-contextual-encounter.png')
 
@@ -346,12 +391,64 @@ await keyActivateExpression(
   "[...document.querySelectorAll('[data-view=mapping-guided] .grapheme-button')].find((el) => el.textContent.trim() === 'П')",
   ' ',
 )
-await sleep(380)
+await waitForExpression(
+  "document.querySelector('[data-view=mapping-guided] .feedback')?.textContent.includes('Yes')",
+  'uppercase П positive feedback',
+)
+const ledgerBeforeEvaluatedBack = await evaluate(
+  "JSON.stringify(JSON.parse(localStorage.getItem('yuzu.work096.lesson1.slice.v1') ?? '{}').evidenceLedger ?? {})",
+)
+await sleep(700)
+await assertBrowser(
+  "document.querySelector('[data-view=mapping-guided]') !== null && document.querySelector('[data-view=mapping-guided] .feedback')?.textContent.includes('Yes') && document.querySelector('[data-evaluation-continue=mapping-guided]') !== null",
+  'positive feedback remains visible until learner-controlled progression',
+)
+evidence.mapping.correctFeedbackPersistent = true
+evidence.mapping.noTimedAutoAdvance = true
+
+await keyActivateExpression(
+  "document.querySelector('[data-evaluation-continue=mapping-guided]')",
+  'Enter',
+)
 await waitForView('mapping-guided')
-await assertBrowser("document.body.innerText.includes('п')", 'lowercase п receives guided practice without a separate alphabet lesson')
+await assertBrowser(
+  "document.querySelector('[data-view=mapping-guided] .grapheme-bank')?.textContent.includes('п')",
+  'learner-controlled progression reaches lowercase п guided practice',
+)
+
+// Evaluated-state Back restoration: feedback and durable provenance stay truthful.
+await evaluate('history.back()')
+await waitForView('mapping-guided')
+await waitForExpression(
+  "document.querySelector('[data-view=mapping-guided] .feedback')?.textContent.includes('Yes')",
+  'restored evaluated feedback',
+)
+await assertBrowser(
+  "document.querySelector('[data-evaluation-continue=mapping-guided]') !== null",
+  'restored evaluated state still exposes its progression action',
+)
+const ledgerAfterEvaluatedBack = await evaluate(
+  "JSON.stringify(JSON.parse(localStorage.getItem('yuzu.work096.lesson1.slice.v1') ?? '{}').evidenceLedger ?? {})",
+)
+if (ledgerAfterEvaluatedBack !== ledgerBeforeEvaluatedBack) {
+  throw new Error('Back changed attempt/support provenance')
+}
+evidence.navigation.evaluatedFeedbackRestored = true
+evidence.navigation.evaluatedBackPreservesProvenance = true
+await evaluate('history.forward()')
+await waitForView('mapping-guided')
+await assertBrowser(
+  "document.querySelector('[data-view=mapping-guided] .grapheme-bank')?.textContent.includes('п')",
+  'browser Forward returns to the next guided task',
+)
+
 await clickAudio('audio/component-p')
 await clickGrapheme('mapping-guided', 'п')
-await sleep(380)
+await waitForExpression(
+  "document.querySelector('[data-view=mapping-guided] .feedback')?.textContent.includes('Yes')",
+  'lowercase п positive feedback',
+)
+await clickViewButton('mapping-guided', 'Continue')
 await waitForView('mapping-retrieve')
 await screenshot('04-mapping-retrieval-p.png')
 evidence.screenshots.push('04-mapping-retrieval-p.png')
@@ -359,17 +456,31 @@ evidence.screenshots.push('04-mapping-retrieval-p.png')
 // Listening to answer alternatives must not submit.
 await clickAudio('audio/component-t')
 await assertBrowser(
-  `!document.querySelector('[data-view="mapping-retrieve"] .feedback').textContent.includes('Try again')`,
+  "!document.querySelector('[data-view=mapping-retrieve] .feedback').textContent.includes('Try again')",
   'playing an audio alternative does not submit an answer',
 )
 await clickAudio('audio/component-p')
 await assertBrowser(
-  `document.querySelector('[data-view="mapping-retrieve"]') !== null`,
+  "document.querySelector('[data-view=mapping-retrieve]') !== null",
   'playing the correct audio still does not submit',
 )
 await chooseSecondSoundOption()
-await sleep(380)
+await waitForExpression(
+  "document.querySelector('[data-view=mapping-retrieve] .feedback')?.textContent.includes('Yes')",
+  'reciprocal П retrieval positive feedback',
+)
+await sleep(700)
+await assertBrowser(
+  "document.querySelector('[data-view=mapping-retrieve]') !== null && document.querySelector('[data-view=mapping-retrieve] .feedback')?.textContent.includes('Yes')",
+  'reciprocal retrieval feedback remains until Continue',
+)
+await keyActivateExpression(
+  "document.querySelector('[data-evaluation-continue=mapping-retrieve]')",
+  'Enter',
+)
+await waitForView('mapping-teach')
 evidence.mapping.completePPath = true
+evidence.accessibility.evaluatedProgressionKeyboardActivation = true
 
 // Establish remaining consonant mappings enough for Build.
 await runMapping(1, 'р', 'r')
@@ -392,18 +503,44 @@ for (let trial = 0; trial < 4; trial += 1) {
     await clickAudio('audio/component-i')
     await clickGrapheme('vowel-trial', 'і')
   } else {
-    const before = await evaluate(`document.querySelector('[data-view="vowel-trial"] .feedback').textContent`)
-    const audioIds = await evaluate(`[...document.querySelectorAll('[data-view="vowel-trial"] .sound-option [data-audio-id]')].map((el) => el.dataset.audioId)`)
+    const before = await evaluate(
+      "document.querySelector('[data-view=vowel-trial] .feedback').textContent",
+    )
+    const audioIds = await evaluate(
+      "[...document.querySelectorAll('[data-view=vowel-trial] .sound-option [data-audio-id]')].map((el) => el.dataset.audioId)",
+    )
     for (const id of audioIds) await clickAudio(id)
-    const after = await evaluate(`document.querySelector('[data-view="vowel-trial"] .feedback').textContent`)
-    if (before !== after) throw new Error('Listening changed vowel correctness state before Choose')
+    const after = await evaluate(
+      "document.querySelector('[data-view=vowel-trial] .feedback').textContent",
+    )
+    if (before !== after) {
+      throw new Error('Listening changed vowel correctness state before Choose')
+    }
     await chooseSecondSoundOption()
   }
-  await sleep(380)
+
+  await waitForExpression(
+    "document.querySelector('[data-view=vowel-trial] .feedback')?.textContent.includes('Yes')",
+    'vowel trial positive feedback',
+  )
+  if (trial === 0) {
+    await sleep(700)
+    await assertBrowser(
+      "document.querySelector('[data-view=vowel-trial]') !== null && document.querySelector('[data-view=vowel-trial] .feedback')?.textContent.includes('Yes')",
+      'vowel positive feedback persists without timer advance',
+    )
+    await keyActivateExpression(
+      "document.querySelector('[data-evaluation-continue=vowel-trial]')",
+      'Enter',
+    )
+  } else {
+    await clickViewButton('vowel-trial', 'Continue')
+  }
 }
 await waitForView('supported-build')
 evidence.vowels.compareAndReplay = true
 evidence.vowels.guidedAndReciprocalPractice = true
+evidence.vowels.correctFeedbackPersistent = true
 
 // Supported Build: compact local Help + preserved response/support provenance.
 await assertBrowser(
@@ -491,19 +628,29 @@ await waitForView('context-return')
 
 // Candidate final evidence: fresh context + print, no target audio until Help.
 await assertBrowser(
-  `document.querySelector('[data-view="context-return"] [data-audio-id="audio/neutral-target"]') === null`,
+  "document.querySelector('[data-view=context-return] [data-audio-id=\"audio/neutral-target\"]') === null",
   'final evidence does not expose target audio before Help',
 )
 await assertBrowser(
-  `document.querySelector('[data-view="context-return"] .context-target')?.textContent.trim() === 'Привіт'`,
+  "document.querySelector('[data-view=context-return] .context-target')?.textContent.trim() === 'Привіт'",
   'final evidence uses full taught print',
 )
 await assertBrowser(
   "getComputedStyle(document.querySelector('.context-image')).backgroundImage.includes('L1-07_context_sprite.webp')",
-  'fresh-context choices use the actual 094 media sprite',
+  'fresh-context choices use the approved 094 media sprite',
 )
-const mediaFetch = await evaluate("fetch('/media/lesson1/L1-07_context_sprite.webp').then((r) => r.ok)")
-if (!mediaFetch) throw new Error('094 context sprite is not browser-loadable')
+const contextSpriteStats = await spriteStats('/media/lesson1/L1-07_context_sprite.webp')
+if (
+  contextSpriteStats.width !== 360 ||
+  contextSpriteStats.height !== 102 ||
+  contextSpriteStats.cells.length !== 4 ||
+  contextSpriteStats.cells.some((cell) => cell.sampled < 100 || cell.lumaRange < 40)
+) {
+  throw new Error(
+    '094 context sprite failed decode/render integrity: ' + JSON.stringify(contextSpriteStats),
+  )
+}
+evidence.media.contextSprite = contextSpriteStats
 await screenshot('09-final-fresh-context.png')
 evidence.screenshots.push('09-final-fresh-context.png')
 

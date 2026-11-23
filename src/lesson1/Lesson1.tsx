@@ -31,6 +31,7 @@ interface PersistedSliceState {
   version: 1
   view: View
   history: View[]
+  historyFeedback: Feedback[]
   feedback: Feedback
   supportedSequence: CoreGrapheme[]
   reducedSequence: CoreGrapheme[]
@@ -49,6 +50,7 @@ function defaultSliceState(): PersistedSliceState {
     version: 1,
     view: { kind: 'encounter' },
     history: [],
+    historyFeedback: [],
     feedback: 'idle',
     supportedSequence: [],
     reducedSequence: [],
@@ -77,6 +79,12 @@ function loadSliceState(): PersistedSliceState {
       version: 1,
       view: parsed.view as View,
       history: Array.isArray(parsed.history) ? parsed.history as View[] : [],
+      historyFeedback: Array.isArray(parsed.historyFeedback)
+        ? parsed.historyFeedback.filter(
+            (item): item is Feedback =>
+              item === 'idle' || item === 'correct' || item === 'retry',
+          )
+        : [],
       feedback:
         parsed.feedback === 'correct' || parsed.feedback === 'retry'
           ? parsed.feedback
@@ -306,6 +314,8 @@ export function Lesson1() {
   const [initial] = useState(loadSliceState)
   const [view, setView] = useState<View>(initial.view)
   const [history, setHistory] = useState<View[]>(initial.history)
+  const [historyFeedback, setHistoryFeedback] =
+    useState<Feedback[]>(initial.historyFeedback)
   const [feedback, setFeedback] = useState<Feedback>(initial.feedback)
   const [supportedSequence, setSupportedSequence] =
     useState<CoreGrapheme[]>(initial.supportedSequence)
@@ -329,6 +339,7 @@ export function Lesson1() {
       version: 1,
       view,
       history,
+      historyFeedback,
       feedback,
       supportedSequence,
       reducedSequence,
@@ -344,6 +355,7 @@ export function Lesson1() {
     evidenceLedger,
     feedback,
     history,
+    historyFeedback,
     reducedHelp,
     reducedSequence,
     supportedHelp,
@@ -354,17 +366,26 @@ export function Lesson1() {
 
   useEffect(() => {
     const existing = window.history.state?.[SLICE_HISTORY_KEY] as
-      | { view?: View; history?: View[]; depth?: number }
+      | {
+          view?: View
+          history?: View[]
+          historyFeedback?: Feedback[]
+          feedback?: Feedback
+          depth?: number
+        }
       | undefined
 
     if (!existing?.view && initial.history.length > 0) {
       const stack = [...initial.history, initial.view]
+      const stackFeedback = [...initial.historyFeedback, initial.feedback]
       window.history.replaceState(
         {
           ...window.history.state,
           [SLICE_HISTORY_KEY]: {
             view: stack[0],
             history: [],
+            historyFeedback: [],
+            feedback: stackFeedback[0] ?? 'idle',
             depth: 0,
           },
         },
@@ -377,6 +398,8 @@ export function Lesson1() {
             [SLICE_HISTORY_KEY]: {
               view: stack[index],
               history: stack.slice(0, index),
+              historyFeedback: stackFeedback.slice(0, index),
+              feedback: stackFeedback[index] ?? 'idle',
               depth: index,
             },
           },
@@ -393,6 +416,8 @@ export function Lesson1() {
           [SLICE_HISTORY_KEY]: {
             view: initial.view,
             history: initial.history,
+            historyFeedback: initial.historyFeedback,
+            feedback: initial.feedback,
             depth,
           },
         },
@@ -402,18 +427,56 @@ export function Lesson1() {
 
     const onPopState = (event: PopStateEvent) => {
       const state = event.state?.[SLICE_HISTORY_KEY] as
-        | { view?: View; history?: View[]; depth?: number }
+        | {
+            view?: View
+            history?: View[]
+            historyFeedback?: Feedback[]
+            feedback?: Feedback
+            depth?: number
+          }
         | undefined
       if (!state?.view) return
       browserDepthRef.current = typeof state.depth === 'number' ? state.depth : 0
       setView(state.view)
       setHistory(Array.isArray(state.history) ? state.history : [])
-      setFeedback('idle')
+      setHistoryFeedback(
+        Array.isArray(state.historyFeedback) ? state.historyFeedback : [],
+      )
+      setFeedback(
+        state.feedback === 'correct' || state.feedback === 'retry'
+          ? state.feedback
+          : 'idle',
+      )
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [initial])
+
+  useEffect(() => {
+    const existing = window.history.state?.[SLICE_HISTORY_KEY] as
+      | { view?: View; depth?: number }
+      | undefined
+    if (!existing?.view) return
+
+    window.history.replaceState(
+      {
+        ...window.history.state,
+        [SLICE_HISTORY_KEY]: {
+          ...existing,
+          view,
+          history,
+          historyFeedback,
+          feedback,
+          depth:
+            typeof existing.depth === 'number'
+              ? existing.depth
+              : browserDepthRef.current,
+        },
+      },
+      '',
+    )
+  }, [feedback, history, historyFeedback, view])
 
   function recordResponse(key: string, response: string) {
     setEvidenceLedger((current) => {
@@ -452,6 +515,7 @@ export function Lesson1() {
 
   function navigate(next: View) {
     const nextHistory = [...history, view]
+    const nextHistoryFeedback = [...historyFeedback, feedback]
     const nextDepth = browserDepthRef.current + 1
     browserDepthRef.current = nextDepth
     window.history.pushState(
@@ -460,12 +524,15 @@ export function Lesson1() {
         [SLICE_HISTORY_KEY]: {
           view: next,
           history: nextHistory,
+          historyFeedback: nextHistoryFeedback,
+          feedback: 'idle',
           depth: nextDepth,
         },
       },
       '',
     )
     setHistory(nextHistory)
+    setHistoryFeedback(nextHistoryFeedback)
     setView(next)
     setFeedback('idle')
   }
@@ -480,15 +547,20 @@ export function Lesson1() {
     }
 
     const nextHistory = history.slice(0, -1)
+    const previousFeedback = historyFeedback.at(-1) ?? 'idle'
+    const nextHistoryFeedback = historyFeedback.slice(0, -1)
     setView(previous)
     setHistory(nextHistory)
-    setFeedback('idle')
+    setHistoryFeedback(nextHistoryFeedback)
+    setFeedback(previousFeedback)
     window.history.replaceState(
       {
         ...window.history.state,
         [SLICE_HISTORY_KEY]: {
           view: previous,
           history: nextHistory,
+          historyFeedback: nextHistoryFeedback,
+          feedback: previousFeedback,
           depth: 0,
         },
       },
@@ -496,20 +568,26 @@ export function Lesson1() {
     )
   }
 
-  function mappingSuccess(index: number, lowercase = false) {
+  function nextAfterMapping(index: number, lowercase = false): View {
+    if (index == 0 && !lowercase) {
+      return { kind: 'mapping-guided', index: 0, lowercase: true }
+    }
+    if (index == 0 && lowercase) return { kind: 'mapping-retrieve-p' }
+    if (index < MAPPINGS.length - 1) {
+      return { kind: 'mapping-teach', index: index + 1 }
+    }
+    return { kind: 'vowel-compare' }
+  }
+
+  function nextAfterVowel(index: number): View {
+    if (index < VOWEL_TRIALS.length - 1) {
+      return { kind: 'vowel-trial', index: index + 1 }
+    }
+    return { kind: 'supported-build' }
+  }
+
+  function markCorrect() {
     setFeedback('correct')
-    window.setTimeout(() => {
-      setFeedback('idle')
-      if (index === 0 && !lowercase) {
-        navigate({ kind: 'mapping-guided', index: 0, lowercase: true })
-      } else if (index === 0 && lowercase) {
-        navigate({ kind: 'mapping-retrieve-p' })
-      } else if (index < MAPPINGS.length - 1) {
-        navigate({ kind: 'mapping-teach', index: index + 1 })
-      } else {
-        navigate({ kind: 'vowel-compare' })
-      }
-    }, 280)
   }
 
   function renderFeedback() {
@@ -600,7 +678,7 @@ export function Lesson1() {
                     key={choice}
                     onClick={() => {
                       recordResponse(viewKey(view), choice)
-                      if (choice === correct) mappingSuccess(view.index, isLower)
+                      if (choice === correct) markCorrect()
                       else setFeedback('retry')
                     }}
                   >
@@ -609,6 +687,16 @@ export function Lesson1() {
                 ))}
               </div>
               {renderFeedback()}
+              {feedback === 'correct' ? (
+                <button
+                  type="button"
+                  className="primary-button is-compact"
+                  data-evaluation-continue="mapping-guided"
+                  onClick={() => navigate(nextAfterMapping(view.index, isLower))}
+                >
+                  Continue
+                </button>
+              ) : null}
               <details
                 className="local-help"
                 onToggle={(event) => {
@@ -635,11 +723,20 @@ export function Lesson1() {
               }} />
               <AudioChoiceRow audioId="p" label="Sound B" onChoose={() => {
                 recordResponse(viewKey(view), 'p')
-                setFeedback('correct')
-                window.setTimeout(() => navigate({ kind: 'mapping-teach', index: 1 }), 280)
+                markCorrect()
               }} />
             </div>
             {renderFeedback()}
+            {feedback === 'correct' ? (
+              <button
+                type="button"
+                className="primary-button is-compact"
+                data-evaluation-continue="mapping-retrieve"
+                onClick={() => navigate({ kind: 'mapping-teach', index: 1 })}
+              >
+                Continue
+              </button>
+            ) : null}
             <details
               className="local-help"
               onToggle={(event) => {
@@ -678,14 +775,7 @@ export function Lesson1() {
         {view.kind === 'vowel-trial' ? (() => {
           const trial = VOWEL_TRIALS[view.index]!
           const next = () => {
-            setFeedback('correct')
-            window.setTimeout(() => {
-              if (view.index < VOWEL_TRIALS.length - 1) {
-                navigate({ kind: 'vowel-trial', index: view.index + 1 })
-              } else {
-                navigate({ kind: 'supported-build' })
-              }
-            }, 280)
+            markCorrect()
           }
           return (
             <section className="lesson-card" data-view="vowel-trial">
@@ -738,6 +828,16 @@ export function Lesson1() {
                 </div>
               )}
               {renderFeedback()}
+              {feedback === 'correct' ? (
+                <button
+                  type="button"
+                  className="primary-button is-compact"
+                  data-evaluation-continue="vowel-trial"
+                  onClick={() => navigate(nextAfterVowel(view.index))}
+                >
+                  Continue
+                </button>
+              ) : null}
               <div className="help-toggle">
                 <button
                   type="button"
