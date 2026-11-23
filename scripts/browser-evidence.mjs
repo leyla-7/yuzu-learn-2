@@ -408,7 +408,7 @@ evidence.mapping.noTimedAutoAdvance = true
 
 await keyActivateExpression(
   "document.querySelector('[data-evaluation-continue=mapping-guided]')",
-  'Enter',
+  ' ',
 )
 await waitForExpression(
   "document.querySelector('[data-view=mapping-guided] .grapheme-bank')?.textContent.includes('п')",
@@ -474,7 +474,7 @@ await assertBrowser(
 )
 await keyActivateExpression(
   "document.querySelector('[data-evaluation-continue=mapping-retrieve]')",
-  'Enter',
+  ' ',
 )
 await waitForView('mapping-teach')
 evidence.mapping.completePPath = true
@@ -529,7 +529,7 @@ for (let trial = 0; trial < 4; trial += 1) {
     )
     await keyActivateExpression(
       "document.querySelector('[data-evaluation-continue=vowel-trial]')",
-      'Enter',
+      ' ',
     )
   } else {
     await clickViewButton('vowel-trial', 'Continue')
