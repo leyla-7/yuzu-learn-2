@@ -410,8 +410,7 @@ await keyActivateExpression(
   "document.querySelector('[data-evaluation-continue=mapping-guided]')",
   'Enter',
 )
-await waitForView('mapping-guided')
-await assertBrowser(
+await waitForExpression(
   "document.querySelector('[data-view=mapping-guided] .grapheme-bank')?.textContent.includes('п')",
   'learner-controlled progression reaches lowercase п guided practice',
 )
@@ -436,8 +435,7 @@ if (ledgerAfterEvaluatedBack !== ledgerBeforeEvaluatedBack) {
 evidence.navigation.evaluatedFeedbackRestored = true
 evidence.navigation.evaluatedBackPreservesProvenance = true
 await evaluate('history.forward()')
-await waitForView('mapping-guided')
-await assertBrowser(
+await waitForExpression(
   "document.querySelector('[data-view=mapping-guided] .grapheme-bank')?.textContent.includes('п')",
   'browser Forward returns to the next guided task',
 )
@@ -535,6 +533,13 @@ for (let trial = 0; trial < 4; trial += 1) {
     )
   } else {
     await clickViewButton('vowel-trial', 'Continue')
+  }
+
+  if (trial < 3) {
+    await waitForExpression(
+      "document.querySelector('[data-view=vowel-trial] .feedback')?.textContent.trim() === ''",
+      'next vowel trial renders after learner-controlled progression',
+    )
   }
 }
 await waitForView('supported-build')
